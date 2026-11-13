@@ -1,0 +1,40 @@
+{
+  "name": "commitcash",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "test": "vitest run",
+    "compile:contract": "cashc contracts/CommitCash.cash --format ts -o src/lib/CommitCash.artifact.ts && cashc contracts/CommitCash.cash -o contracts/CommitCash.json",
+    "keys": "tsx scripts/keys.mts",
+    "chipnet:status": "tsx scripts/chipnet.mts status",
+    "chipnet:run": "tsx scripts/chipnet.mts run"
+  },
+  "dependencies": {
+    "@bitauth/libauth": "^3.1.0-next.8",
+    "@wizardconnect/core": "^0.2.10",
+    "@wizardconnect/dapp": "^0.2.7",
+    "@wizardconnect/react": "^0.2.6",
+    "cashscript": "^0.14.0",
+    "next": "16.4.6",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/turbopack": "4.3.3",
+    "@types/node": "^24.19.2",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "cashc": "^0.14.0",
+    "eslint": "^9",
+    "eslint-config-next": "16.4.6",
+    "tailwindcss": "4.3.3",
+    "tsx": "^4.23.15",
+    "typescript": "^5",
+    "vitest": "^5.1.0"
+  },
+  "type": "module"
+}
