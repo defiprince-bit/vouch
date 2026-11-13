@@ -6,7 +6,7 @@ import { useWallet } from './WalletProvider';
 
 const short = (a: string) => a.replace(/^(\w+:\w{4})\w+(\w{4})$/, '$1…$2');
 
-export function ConnectWallet({ size }: { size?: 'lg' }) {
+export function ConnectWallet({ size, variant = 'primary' }: { size?: 'lg'; variant?: 'primary' | 'ghost' }) {
   const w = useWallet();
   const addr = useMemo(() => (w.stakerPubkeyHex ? stakerP2pkhAddress(hexToBin(w.stakerPubkeyHex)) : null), [w.stakerPubkeyHex]);
   if (w.state === 'connected') {
@@ -21,7 +21,7 @@ export function ConnectWallet({ size }: { size?: 'lg' }) {
   return (
     <button
       type="button"
-      className={`btn btn-primary${size === 'lg' ? ' btn-lg' : ''}`}
+      className={`btn ${variant === 'ghost' ? 'btn-ghost' : 'btn-primary'}${size === 'lg' ? ' btn-lg' : ''}`}
       onClick={() => w.connect()}
       disabled={w.state === 'connecting'}
       title={w.error ?? undefined}
