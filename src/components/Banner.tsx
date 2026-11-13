@@ -1,4 +1,4 @@
-import { SLIDES_URL, REPO_URL, EMBER_ADDRESS, IS_MAINNET } from '@/lib/config';
+import { SLIDES_URL, REPO_URL, EMBER_ADDRESS } from '@/lib/config';
 
 // BCH BLAZE 2026 required homepage banner: slides, repo, EMBER2026 CashTokens address.
 export function Banner() {
@@ -8,8 +8,7 @@ export function Banner() {
         <span className="font-semibold">BCH BLAZE 2026</span>
         <a className="underline" href={SLIDES_URL} target="_blank" rel="noreferrer">Slides</a>
         <a className="underline" href={REPO_URL} target="_blank" rel="noreferrer">Repo</a>
-        <span className="truncate">EMBER2026: <code>{EMBER_ADDRESS}</code></span>
-        <span className="ml-auto rounded bg-black/30 px-2 py-0.5">{IS_MAINNET ? 'MAINNET: real BCH, dust only' : 'Chipnet: test coins, no real funds'}</span>
+        <span className="truncate">EMBER2026: <code className="font-mono">{EMBER_ADDRESS}</code></span>
       </div>
     </div>
   );

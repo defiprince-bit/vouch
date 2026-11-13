@@ -1,12 +1,15 @@
 // CommitCash contract helpers: instantiate a pledge covenant and build its four spend transactions.
 import {
   Contract,
-  ElectrumNetworkProvider,
   TransactionBuilder,
+  placeholderP2PKHUnlocker,
+  placeholderSignature,
   type NetworkProvider,
   type SpendableUtxo,
   type SignatureTemplate,
 } from 'cashscript';
+import { getProvider as getNetworkProvider, type BchNetwork } from './providers';
+import { keepSignaturesFromTx } from './wc';
 import {
   cashAddressToLockingBytecode,
   encodeCashAddress,
@@ -17,7 +20,7 @@ import {
 } from '@bitauth/libauth';
 import artifact from './CommitCash.artifact';
 
-export type BchNetwork = 'chipnet' | 'mainnet';
+export type { BchNetwork } from './providers';
 
 /** Default fee cap baked into each pledge (sats). */
 export const DEFAULT_MAX_FEE = 2000n;
@@ -47,7 +50,7 @@ export function getNetwork(): BchNetwork {
 }
 
 export function getProvider(network: BchNetwork = getNetwork()): NetworkProvider {
-  return new ElectrumNetworkProvider(network);
+  return getNetworkProvider(network);
 }
 
 export function newPledgeId(): string {
@@ -149,4 +152,50 @@ export function buildForfeit(o: SpendBase & { beneficiaryAddress: string; deadli
     .addInput(o.utxo, o.contract.unlock.forfeit())
     .addOutput({ to: o.beneficiaryAddress, amount: payout(o.utxo, o.fee ?? DEFAULT_FEE) })
     .setLocktime(o.deadline);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Wallet (WizardConnect) flows
+
+/** About one hour of blocks: the verifier must sign keep before deadline - this. */
+export const VERIFY_MARGIN_BLOCKS = 6;
+export const verifyByHeight = (deadline: number) => deadline - VERIFY_MARGIN_BLOCKS;
+
+/** Lock: wallet P2PKH UTXOs -> contract. Inputs use placeholder unlockers; the wallet signs them. */
+export function buildLock(o: {
+  provider: NetworkProvider;
+  walletUtxos: SpendableUtxo[];
+  walletAddress: string;
+  contractAddress: string;
+  stake: bigint;
+}) {
+  const utxos = o.walletUtxos.filter((u) => !u.token);
+  const total = utxos.reduce((s, u) => s + u.satoshis, 0n);
+  if (total < o.stake + 1000n) throw new Error(`Wallet has ${total} sats; need ${o.stake} + fees`);
+  return new TransactionBuilder({ provider: o.provider })
+    .addInputs(utxos, placeholderP2PKHUnlocker(o.walletAddress))
+    .addOutput({ to: o.contractAddress, amount: o.stake })
+    .addBchChangeOutputIfNeeded({ to: o.walletAddress, feeRate: 1.1 });
+}
+
+/**
+ * Demo/server verifier, verifier-first: sign the deterministic keep tx (staker slot = placeholder)
+ * and return only the verifier's signature. The staker's wallet then fills its own placeholder
+ * and broadcasts.
+ */
+export function verifierKeepSignature(o: {
+  contract: PledgeContract;
+  provider: NetworkProvider;
+  utxo: SpendableUtxo;
+  verifier: SignatureTemplate;
+  stakerAddress: string;
+  fee?: bigint;
+}): Uint8Array {
+  const hex = buildKeep({ ...o, stakerSig: placeholderSignature(), verifierSig: o.verifier }).build();
+  return keepSignaturesFromTx(hex).verifierSig;
+}
+
+/** Auto-settle rule: the deadline has passed and coins are still locked. */
+export function shouldAutoForfeit(height: number | null, deadline: number, lockedSats: bigint): boolean {
+  return height !== null && height >= deadline && lockedSats > 0n;
 }

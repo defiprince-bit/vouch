@@ -7,6 +7,7 @@ export interface StoredPledge {
   beneficiaryAddress: string;
   stakerPubkey: string; // hex
   verifierPubkey: string; // hex
+  verifierKind?: 'demo' | 'friend';
   contractAddress: string;
   network: 'chipnet' | 'mainnet';
   createdAt: number;

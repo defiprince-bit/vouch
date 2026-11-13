@@ -9,5 +9,4 @@ export const SLIDES_URL = process.env.NEXT_PUBLIC_SLIDES_URL ?? '#slides-todo';
 export const REPO_URL = process.env.NEXT_PUBLIC_REPO_URL ?? '#repo-todo';
 export const EMBER_ADDRESS = process.env.NEXT_PUBLIC_EMBER_ADDRESS ?? 'bitcoincash:z…(EMBER2026 CashTokens address TODO)';
 
-// Default verifier = CommitCash demo verifier key (centralised; see README). Users can paste a friend's pubkey instead.
-export const DEFAULT_VERIFIER_PUBKEY = process.env.NEXT_PUBLIC_VERIFIER_PUBKEY ?? '';
+// The demo verifier's public key is served by GET /api/verifier (its private key is server-only).

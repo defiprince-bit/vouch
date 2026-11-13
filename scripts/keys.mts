@@ -11,4 +11,12 @@ for (const name of names) {
   appendFileSync(file, `${name}=${encodePrivateKeyWif(generatePrivateKey(), 'testnet')}\n`);
   added++;
 }
+// The app's demo verifier (server-only env var). Locally it reuses the chipnet verifier key so
+// scripts and the running app agree; on Vercel set COMMITCASH_VERIFIER_WIF to a fresh WIF.
+const now = readFileSync(file, 'utf8');
+if (!now.includes('COMMITCASH_VERIFIER_WIF=')) {
+  const v = now.match(/^CHIPNET_VERIFIER_WIF=(.+)$/m)?.[1];
+  appendFileSync(file, `COMMITCASH_VERIFIER_WIF=${v}\n`);
+  added++;
+}
 console.log(added ? `Added ${added} chipnet test key(s) to ${file}` : `${file} already has chipnet keys`);

@@ -2,27 +2,34 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { hexToBin } from '@bitauth/libauth';
-import { createPledgeContract, getProvider, newPledgeId, validatePledge, MIN_STAKE } from '@/lib/commitcash';
+import { createPledgeContract, getProvider, newPledgeId, validatePledge, verifyByHeight, MIN_STAKE } from '@/lib/commitcash';
 import { savePledge, type StoredPledge } from '@/lib/pledges';
-import { NETWORK, DEFAULT_VERIFIER_PUBKEY, EXPLORER_ADDR } from '@/lib/config';
+import { NETWORK, EXPLORER_ADDR } from '@/lib/config';
+import { TxLink } from '@/components/TxLink';
 import { useWallet } from '@/components/WalletProvider';
+import { useDemoVerifier } from '@/lib/useDemoVerifier';
+import { lockFromWallet } from '@/lib/walletActions';
 
 const BLOCKS_PER_DAY = 144;
 
 export function CreatePledgeForm() {
   const wallet = useWallet();
+  const demo = useDemoVerifier();
   const [promise, setPromise] = useState('');
   const [stake, setStake] = useState(String(MIN_STAKE * 2n));
   const [days, setDays] = useState('7');
   const [beneficiary, setBeneficiary] = useState('');
-  const [verifier, setVerifier] = useState(DEFAULT_VERIFIER_PUBKEY);
+  const [verifierMode, setVerifierMode] = useState<'demo' | 'friend'>('demo');
+  const [friendKey, setFriendKey] = useState('');
   const [manualStaker, setManualStaker] = useState('');
   const [error, setError] = useState<string[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [created, setCreated] = useState<StoredPledge | null>(null);
   const [busy, setBusy] = useState(false);
+  const [lockMsg, setLockMsg] = useState<string | null>(null);
 
   const stakerHex = wallet.stakerPubkeyHex ?? manualStaker.trim();
+  const verifierHex = verifierMode === 'demo' ? demo.pubkey ?? '' : friendKey.trim();
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -30,14 +37,16 @@ export function CreatePledgeForm() {
     setWarnings([]);
     setBusy(true);
     try {
-      if (!/^[0-9a-f]{66}$/i.test(stakerHex)) throw new Error('Connect a wallet (or paste your 33-byte staker pubkey hex)');
-      if (!/^[0-9a-f]{66}$/i.test(verifier.trim())) throw new Error('Verifier pubkey must be 33-byte hex');
+      if (!/^[0-9a-f]{66}$/i.test(stakerHex)) throw new Error('Connect a wallet (or paste your 33-byte staker public key)');
+      if (!/^[0-9a-f]{66}$/i.test(verifierHex)) {
+        throw new Error(verifierMode === 'demo' ? 'The demo verifier is not available on this deployment. Pick a friend.' : "Paste your friend's verifier key (they can get it at /verifier-key)");
+      }
       const provider = getProvider();
       const height = await provider.getBlockHeight();
-      const deadline = height + Math.max(1, Math.round(Number(days) * BLOCKS_PER_DAY));
+      const deadline = height + Math.max(12, Math.round(Number(days) * BLOCKS_PER_DAY));
       const params = {
         stakerPubkey: hexToBin(stakerHex),
-        verifierPubkey: hexToBin(verifier.trim()),
+        verifierPubkey: hexToBin(verifierHex),
         beneficiaryAddress: beneficiary.trim(),
         deadline,
         pledgeId: newPledgeId(),
@@ -57,19 +66,30 @@ export function CreatePledgeForm() {
         deadline,
         beneficiaryAddress: params.beneficiaryAddress,
         stakerPubkey: stakerHex,
-        verifierPubkey: verifier.trim(),
+        verifierPubkey: verifierHex,
+        verifierKind: verifierMode,
         contractAddress: contract.address,
         network: NETWORK,
         createdAt: Date.now(),
       };
       savePledge(pledge);
       setCreated(pledge);
-      // TODO(lock): build the funding tx (wallet P2PKH UTXOs -> contract.address, `stake` sats) and send it
-      // to the wallet via wallet.manager.signTransaction({ transaction, inputPaths }) with broadcast.
     } catch (err) {
       setError([(err as Error).message]);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function lock() {
+    if (!created || !wallet.manager) return;
+    setLockMsg('Check your wallet to approve the lock…');
+    try {
+      const { txid } = await lockFromWallet(wallet.manager, created);
+      savePledge({ ...created, lastTxid: txid });
+      setLockMsg(`Locked. ${txid}`);
+    } catch (e) {
+      setLockMsg((e as Error).message);
     }
   }
 
@@ -79,14 +99,21 @@ export function CreatePledgeForm() {
     return (
       <div className="space-y-3 rounded-2xl border border-emerald-500/40 bg-emerald-500/5 p-6">
         <h2 className="text-xl font-semibold">Pledge created: “{created.promise}”</h2>
-        <p className="text-sm text-neutral-300">Send exactly <b>{created.stakeSats} sats</b> to lock it:</p>
-        <code className="block break-all rounded bg-black/40 p-3 text-sm">{created.contractAddress}</code>
+        {wallet.state === 'connected' ? (
+          <button onClick={lock} className="rounded-full bg-emerald-500 px-5 py-3 font-semibold text-black">
+            Lock {created.stakeSats} sats from my wallet
+          </button>
+        ) : (
+          <p className="text-sm text-neutral-300">Connect your wallet to lock it, or send exactly <b>{created.stakeSats} sats</b> to:</p>
+        )}
+        {lockMsg && (lockMsg.startsWith('Locked. ') ? <TxLink txid={lockMsg.slice(8)} label="Locked: view transaction" /> : <p className="break-all text-sm text-neutral-200">{lockMsg}</p>)}
+        <code className="block break-all rounded bg-black/40 p-3 text-xs">{created.contractAddress}</code>
         <p className="text-xs text-neutral-400">
-          Deadline: block {created.deadline}. Ask your verifier to co-sign the keep before then.{' '}
+          Deadline: block {created.deadline}. Your verifier must approve by block {verifyByHeight(created.deadline)} (about 1 hour before the deadline).{' '}
           <a className="underline" href={EXPLORER_ADDR + created.contractAddress} target="_blank" rel="noreferrer">Explorer</a>
         </p>
         {warnings.map((w) => <p key={w} className="text-xs text-amber-300">⚠ {w}</p>)}
-        <Link href="/pledges" className="inline-block rounded-full bg-emerald-500 px-4 py-2 font-semibold text-black">View my pledges</Link>
+        <Link href="/pledges" className="inline-block rounded-full border border-neutral-600 px-4 py-2">View my pledges</Link>
       </div>
     );
   }
@@ -111,13 +138,26 @@ export function CreatePledgeForm() {
         <span className="text-sm text-neutral-400">Beneficiary address (gets the stake if you break it, can’t be changed later)</span>
         <input className={field} required value={beneficiary} onChange={(e) => setBeneficiary(e.target.value)} placeholder={NETWORK === 'mainnet' ? 'bitcoincash:q…' : 'bchtest:q…'} />
       </label>
-      <label className="block">
-        <span className="text-sm text-neutral-400">Verifier pubkey (accountability partner, defaults to the CommitCash demo verifier)</span>
-        <input className={field} value={verifier} onChange={(e) => setVerifier(e.target.value)} placeholder="02… / 03… (33-byte hex)" />
-      </label>
+      <fieldset className="space-y-2 rounded-xl border border-neutral-800 p-4">
+        <legend className="px-1 text-sm text-neutral-400">Who confirms you kept it?</legend>
+        <label className="flex items-start gap-2 text-sm">
+          <input type="radio" checked={verifierMode === 'demo'} onChange={() => setVerifierMode('demo')} />
+          <span>
+            CommitCash demo verifier <span className="text-neutral-500">(operated by this app; approves when you confirm. Fine for trying it, not a real referee)</span>
+            {verifierMode === 'demo' && !demo.loading && !demo.pubkey && <span className="block text-amber-300">Not configured on this deployment.</span>}
+          </span>
+        </label>
+        <label className="flex items-start gap-2 text-sm">
+          <input type="radio" checked={verifierMode === 'friend'} onChange={() => setVerifierMode('friend')} />
+          <span>A friend: they approve by signing the refund in their own wallet</span>
+        </label>
+        {verifierMode === 'friend' && (
+          <input className={field} value={friendKey} onChange={(e) => setFriendKey(e.target.value)} placeholder="Friend's verifier key (they get it at /verifier-key)" />
+        )}
+      </fieldset>
       {!wallet.stakerPubkeyHex && (
         <label className="block">
-          <span className="text-sm text-neutral-400">No wallet connected? Paste your staker pubkey (hex)</span>
+          <span className="text-sm text-neutral-400">No wallet connected? Paste your staker public key (hex)</span>
           <input className={field} value={manualStaker} onChange={(e) => setManualStaker(e.target.value)} placeholder="02… / 03…" />
         </label>
       )}

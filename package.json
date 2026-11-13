@@ -11,7 +11,8 @@
     "compile:contract": "cashc contracts/CommitCash.cash --format ts -o src/lib/CommitCash.artifact.ts && cashc contracts/CommitCash.cash -o contracts/CommitCash.json",
     "keys": "tsx scripts/keys.mts",
     "chipnet:status": "tsx scripts/chipnet.mts status",
-    "chipnet:run": "tsx scripts/chipnet.mts run"
+    "chipnet:run": "tsx scripts/chipnet.mts run",
+    "e2e:app": "tsx scripts/e2e-app.mts"
   },
   "dependencies": {
     "@bitauth/libauth": "^3.1.0-next.8",

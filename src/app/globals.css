@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+@theme inline {
+  --font-sans: var(--font-figtree), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-syne), var(--font-figtree), sans-serif;
+  --font-mono: var(--font-dm-mono), ui-monospace, monospace;
+}
+
 body {
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-sans);
+}
+
+h1, h2, h3 {
+  font-family: var(--font-display);
 }
