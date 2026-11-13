@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { hexToBin } from '@bitauth/libauth';
 import { savePledge, type StoredPledge } from '@/lib/pledges';
-import { shouldAutoForfeit, stakerP2pkhAddress, verifyByHeight } from '@/lib/commitcash';
+import { shouldAutoForfeit, stakerP2pkhAddress, verifyByHeight } from '@/lib/vouch';
 import { EXPLORER_ADDR, EXPLORER_TX } from '@/lib/config';
 import { formatBch, formatCountdown, formatDateTime, shortAddr, BLOCK_SECONDS } from '@/lib/format';
 import { TxLink } from '@/components/TxLink';
@@ -30,7 +30,7 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
   const now = useNow();
   const autoTried = useRef(false);
   const isDemo = pledge.verifierKind !== 'friend';
-  const verifierName = isDemo ? 'CommitCash demo' : (pledge.verifierName ?? 'Your friend');
+  const verifierName = isDemo ? 'Vouch demo' : (pledge.verifierName ?? 'Your friend');
   const beneName = pledge.beneficiaryName ?? 'the beneficiary';
 
   // Mobile: the mock pins "Your move" to the bottom of the screen on the status page.
@@ -174,7 +174,7 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
   const countSub = live
     ? 'After the deadline, keep and forfeit can race — send Keep as soon as the verifier signs the refund.'
     : phase === 'expired'
-      ? `The deadline passed. CommitCash is settling the forfeit to ${beneName}.`
+      ? `The deadline passed. Vouch is settling the forfeit to ${beneName}.`
       : outcome === 'kept'
         ? 'You and the verifier signed the refund. The stake was returned.'
         : outcome === 'broken'
@@ -191,7 +191,7 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
       <header className="screen-head">
         <div>
           <p className="crumbs">
-            <Link href="/">CommitCash</Link> / <Link href="/pledges">Pledges</Link> / This pledge
+            <Link href="/">Vouch</Link> / <Link href="/pledges">Pledges</Link> / This pledge
           </p>
           <h1>{pledge.promise}</h1>
         </div>
@@ -323,7 +323,7 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
                 <label htmlFor="keep-note">What did you do?</label>
                 <textarea id="keep-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ran on Monday, Wednesday and Friday." />
                 <p className="hint">
-                  Honour system: the demo verifier approves any refund you ask for. It’s run by CommitCash for trying the app; for real stakes, use a friend.
+                  Honour system: the demo verifier approves any refund you ask for. It’s run by Vouch for trying the app; for real stakes, use a friend.
                 </p>
                 <div className="action-bar actions-stack">
                   <button
@@ -360,7 +360,7 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
                   <strong>
                     Sending {stake} to {beneName}…
                   </strong>
-                  <p>CommitCash is settling the forfeit. The contract doesn’t send it by itself. If it hasn’t landed, Settle broadcasts it.</p>
+                  <p>Vouch is settling the forfeit. The contract doesn’t send it by itself. If it hasn’t landed, Settle broadcasts it.</p>
                 </div>
                 <div className="action-bar actions-stack">
                   <button

@@ -1,4 +1,4 @@
-// Server-only: the CommitCash demo verifier and the keeper that settles expired pledges.
+// Server-only: the Vouch demo verifier and the keeper that settles expired pledges.
 // The verifier key comes from COMMITCASH_VERIFIER_WIF (server env, never NEXT_PUBLIC_, never committed).
 // Only import this from route handlers / scripts.
 import { SignatureTemplate, type NetworkProvider, type SpendableUtxo } from 'cashscript';
@@ -12,7 +12,7 @@ import {
   stakerP2pkhAddress,
   DEFAULT_FEE,
   type BchNetwork,
-} from '@/lib/commitcash';
+} from '@/lib/vouch';
 
 export interface PledgeTerms {
   id: string;

@@ -1,5 +1,5 @@
 {
-  "name": "commitcash",
+  "name": "vouch",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "compile:contract": "cashc contracts/CommitCash.cash --format ts -o src/lib/CommitCash.artifact.ts && cashc contracts/CommitCash.cash -o contracts/CommitCash.json",
+    "compile:contract": "cashc contracts/Vouch.cash --format ts -o src/lib/Vouch.artifact.ts && cashc contracts/Vouch.cash -o contracts/Vouch.json",
     "keys": "tsx scripts/keys.mts",
     "chipnet:status": "tsx scripts/chipnet.mts status",
     "chipnet:run": "tsx scripts/chipnet.mts run",
@@ -37,5 +37,6 @@
     "typescript": "^5",
     "vitest": "^5.1.0"
   },
-  "type": "module"
+  "type": "module",
+  "license": "MIT"
 }

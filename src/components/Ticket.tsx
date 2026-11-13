@@ -23,7 +23,7 @@ export function Ticket(p: TicketProps) {
     <article className="ticket">
       <div className="ticket-stub">
         <BrandMark />
-        <span className="stub-label">CommitCash</span>
+        <span className="stub-label">Vouch</span>
       </div>
       <div className="ticket-body">
         <div className="ticket-top">

@@ -11,7 +11,7 @@ const figtree = Figtree({ subsets: ['latin'], variable: '--font-figtree', weight
 const dmMono = DM_Mono({ subsets: ['latin'], variable: '--font-dm-mono', weight: ['400', '500'] });
 
 export const metadata: Metadata = {
-  title: 'CommitCash: stake BCH on a habit',
+  title: 'Vouch: stake BCH on a habit',
   description: 'Stake BCH on a habit. Keep the streak, the covenant returns your coins. Break it, the stake pays someone else.',
   icons: {
     icon: [

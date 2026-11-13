@@ -25,7 +25,7 @@ export default function Home() {
             habit="Run three mornings this week."
             stake="0.05 BCH"
             deadline="27 Nov 2026, 23:59 WAT"
-            verifier="CommitCash demo"
+            verifier="Vouch demo"
             beneficiary="Chidi"
             beneficiaryAddr="bitcoincash:p…"
             keepCopy="Coins return to you, after you sign and the verifier signs the refund in their wallet."
@@ -38,7 +38,7 @@ export default function Home() {
         <article className="step">
           <p className="step-num">01 Stake</p>
           <h2>Lock the coins</h2>
-          <p>Name the habit, the amount in BCH, a deadline, who verifies (the CommitCash demo, or a friend), and the person who is paid if you slip.</p>
+          <p>Name the habit, the amount in BCH, a deadline, who verifies (the Vouch demo, or a friend), and the person who is paid if you slip.</p>
         </article>
         <article className="step">
           <p className="step-num">02 Verify</p>

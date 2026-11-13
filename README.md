@@ -1,4 +1,4 @@
-# CommitCash
+# Vouch
 
 **Stake BCH on a habit. Keep the streak, the covenant returns your coins. Break it, the stake pays someone else.**
 
@@ -6,7 +6,7 @@ A CashScript covenant on Bitcoin Cash + a Next.js app. Built for BCH BLAZE 2026 
 
 ## How it works in 30 seconds
 
-Each pledge is its own contract address (`contracts/CommitCash.cash`), fixed at creation:
+Each pledge is its own contract address (`contracts/Vouch.cash`), fixed at creation:
 `stakerPk, verifierPk, beneficiaryLock, deadline, pledgeId (16 random bytes), maxFee`.
 
 | Path | Who authorises | Where the coins can go (enforced on-chain) | When |
@@ -28,7 +28,7 @@ Every path:
 - **Collusion:** verifier + beneficiary can lie "broken" (the UI refuses verifier = beneficiary). Staker + verifier can lie "kept"; that's inherent, so it's a bet, not a guarantee. Staker = verifier is allowed and labelled a self-honour pledge.
 - **Replay:** verifier approval is a transaction signature (`checkSig`, default `SIGHASH_ALL | SIGHASH_UTXOS`), which commits to the exact outpoint being spent. A verifier signature for pledge A can't be reused on pledge B (there's a test for this). We use `checkSig` rather than `checkDataSig` because WizardConnect only supports transaction signing (`sign_transaction_request`); it has no raw-message signing.
 - **Keep vs forfeit race:** script can't say "before T", so keep stays valid after the deadline, and once it passes, whichever valid tx miners see first wins. The app tells the verifier to sign before deadline minus 1 hour.
-- **Demo verifier = operated by this app, honour system.** If you don't name a friend, your verifier is the *CommitCash demo verifier*: a key held server-side by whoever runs this deployment (`COMMITCASH_VERIFIER_WIF`). It co-signs **keep** for whoever asks (after a confirm box and a short note, before deadline minus ~1 hour); it does not check that you did the thing. It's for trying the app. **For a real pledge, name a friend as verifier.**
+- **Demo verifier = operated by this app, honour system.** If you don't name a friend, your verifier is the *Vouch demo verifier*: a key held server-side by whoever runs this deployment (`COMMITCASH_VERIFIER_WIF`). It co-signs **keep** for whoever asks (after a confirm box and a short note, before deadline minus ~1 hour); it does not check that you did the thing. It's for trying the app. **For a real pledge, name a friend as verifier.**
 - **The demo verifier never signs a break.** `/api/verifier` can't authenticate its caller, so if it signed `breakByVerifier`, anyone holding a pledge's terms (the beneficiary included) could force a demo pledge to break. It refuses `action: "break"` (HTTP 403, covered by a test). A demo pledge ends only by keep, by expiry (`forfeit`), or by the staker's own `breakByStaker`, which the staker signs alone in their wallet.
 
 Full one-pager: [`trust-model.md`](trust-model.md).
@@ -40,7 +40,7 @@ npm install
 npm test               # 39 tests: 20 covenant paths/attacks, 14 wallet flows (mock WizardConnect wallet), 5 format helpers
 npm run build
 npm run dev
-npm run compile:contract   # after editing contracts/CommitCash.cash
+npm run compile:contract   # after editing contracts/Vouch.cash
 ```
 
 ### Chipnet end-to-end
@@ -109,8 +109,12 @@ See [`.env.example`](.env.example). For a deployment:
 | `NEXT_PUBLIC_BCH_NETWORK` | public | `chipnet` (default) or `mainnet` |
 | `NEXT_PUBLIC_BCH_PROVIDER` | public | `auto` (default), `electrum`, `rest` |
 | `NEXT_PUBLIC_SLIDES_URL`, `NEXT_PUBLIC_REPO_URL`, `NEXT_PUBLIC_EMBER_ADDRESS` | public | banner links |
-| `COMMITCASH_VERIFIER_WIF` | **server-only** | the app-operated demo verifier key (co-signs keep only). Never `NEXT_PUBLIC_`. Unset = demo verifier off |
+| `COMMITCASH_VERIFIER_WIF` | **server-only** | the app-operated demo verifier key (co-signs keep only). Never `NEXT_PUBLIC_`. Unset = demo verifier off. *Legacy name from before the rename to Vouch; kept as is because it's already set on Vercel.* |
 
 ## License
 
-MIT (to add). WizardConnect is LGPL-3.0-or-later (used unmodified as a dependency).
+MIT, see [`LICENSE`](LICENSE). Copyright (c) 2026 Douglas Godwin Michael. WizardConnect is LGPL-3.0-or-later (used unmodified as a dependency).
+
+## Renamed from CommitCash
+
+The project was called CommitCash until 13 Nov 2026. The contract is now `contracts/Vouch.cash` (`contract Vouch`); renaming it did not change the compiled bytecode (identical, checked against the pre-rename artifact), so pledges and contract addresses created before the rename still work, and the chipnet txids above are still valid. Two names stay on purpose: the env var `COMMITCASH_VERIFIER_WIF`, and the old browser storage key `commitcash-pledges`, which is still read so earlier pledges show up.

@@ -22,7 +22,7 @@ import {
   validatePledge,
   DEFAULT_FEE,
   type PledgeContract,
-} from '@/lib/commitcash';
+} from '@/lib/vouch';
 
 function makeKey() {
   const priv = generatePrivateKey();
@@ -34,7 +34,7 @@ function makeKey() {
 const STAKE = 100_000n;
 const DEADLINE = 1000;
 
-describe('CommitCash covenant', () => {
+describe('Vouch covenant', () => {
   let provider: MockNetworkProvider;
   const staker = makeKey();
   const verifier = makeKey();
@@ -257,3 +257,20 @@ function extractFirstPush(txHex: string): Uint8Array {
 
 // keep type import used
 export type _C = PledgeContract;
+
+describe('rename to Vouch keeps existing pledges valid', () => {
+  it('a pledge locked on chipnet before the rename still derives the same contract address', () => {
+    // chipnet lock 948e1dcfe8ada813e51cc909a98bbb162210b3885b90c9b91f4a948a22f2b5f2 (13 Nov 2026, contract then named CommitCash)
+    const c = createPledgeContract(
+      {
+        stakerPubkey: hexToBin('0243d3dbb0fbdd8022babc7d6eba3ff29954e921938bcc15a77e10453150ccf74e'),
+        verifierPubkey: hexToBin('03c04a6ec7e8a81edab12aac89e4446c32c3da494634f6ebc3403c2de8e73f21ae'),
+        beneficiaryAddress: 'bchtest:qp34e56f9uvf90zw48z2mmng4963r46seqp57s4td2',
+        deadline: 333190,
+        pledgeId: '1f77c2d9173e1097656cd0bd80f1de32',
+      },
+      new MockNetworkProvider(),
+    );
+    expect(c.address).toBe('bchtest:pdsdym2hazhy8hl4j6a8mcacd6s9zv4sh0q86u290xz8rq2vjlgpxzm90qr6j');
+  });
+});

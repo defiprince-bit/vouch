@@ -1,10 +1,10 @@
 // Lock a real chipnet demo pledge with the throwaway staker key and print the StoredPledge JSON
-// (paste it into the browser's localStorage "commitcash-pledges" to see a live status page).
+// (paste it into the browser's localStorage "vouch-pledges" to see a live status page).
 // Usage: npx tsx scripts/seed-demo-pledge.mts [baseUrl] [days]
 import { readFileSync } from 'node:fs';
 import { SignatureTemplate, TransactionBuilder } from 'cashscript';
 import { decodePrivateKeyWif, secp256k1, binToHex, hexToBin } from '@bitauth/libauth';
-import { createPledgeContract, stakerP2pkhAddress, newPledgeId } from '../src/lib/commitcash.ts';
+import { createPledgeContract, stakerP2pkhAddress, newPledgeId } from '../src/lib/vouch.ts';
 import { RestNetworkProvider } from '../src/lib/providers.ts';
 
 const BASE = process.argv[2] ?? 'http://localhost:3311';

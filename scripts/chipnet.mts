@@ -12,7 +12,7 @@ import {
   stakerP2pkhAddress,
   newPledgeId,
   MIN_STAKE,
-} from '../src/lib/commitcash';
+} from '../src/lib/vouch';
 
 const env = Object.fromEntries(
   readFileSync('.env.local', 'utf8')

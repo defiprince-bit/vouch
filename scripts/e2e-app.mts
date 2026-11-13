@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { SignatureTemplate, TransactionBuilder, placeholderSignature } from 'cashscript';
 import { decodePrivateKeyWif, secp256k1, binToHex, hexToBin } from '@bitauth/libauth';
-import { createPledgeContract, buildKeep, stakerP2pkhAddress, newPledgeId } from '../src/lib/commitcash.ts';
+import { createPledgeContract, buildKeep, stakerP2pkhAddress, newPledgeId } from '../src/lib/vouch.ts';
 import { RestNetworkProvider } from '../src/lib/providers.ts';
 import { toWcSignRequest, keepSignaturesFromTx, DUMMY_SIGNATURE } from '../src/lib/wc.ts';
 import { mockWalletSign } from '../test/mock-wallet.ts';

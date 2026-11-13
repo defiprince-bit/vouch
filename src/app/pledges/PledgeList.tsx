@@ -55,7 +55,7 @@ export function PledgeList({ pledges }: { pledges: StoredPledge[] }) {
     <>
       <header className="screen-head">
         <div>
-          <p className="crumbs"><Link href="/">CommitCash</Link> / Pledges</p>
+          <p className="crumbs"><Link href="/">Vouch</Link> / Pledges</p>
           <h1>Your pledges</h1>
         </div>
         <Link className="btn btn-primary" href="/create">Create a pledge</Link>

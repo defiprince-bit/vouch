@@ -1,6 +1,6 @@
 'use client';
 import { useMemo, useSyncExternalStore } from 'react';
-import { parsePledges, PLEDGES_EVENT, PLEDGES_KEY, type StoredPledge } from './pledges';
+import { parsePledges, readPledgesRaw, PLEDGES_EVENT, type StoredPledge } from './pledges';
 
 function subscribe(cb: () => void) {
   window.addEventListener('storage', cb);
@@ -13,6 +13,6 @@ function subscribe(cb: () => void) {
 
 /** Pledges saved in this browser; null during SSR / first paint. */
 export function usePledges(): StoredPledge[] | null {
-  const raw = useSyncExternalStore(subscribe, () => window.localStorage.getItem(PLEDGES_KEY) ?? '[]', () => null);
+  const raw = useSyncExternalStore(subscribe, () => readPledgesRaw(window.localStorage), () => null);
   return useMemo(() => (raw === null ? null : parsePledges(raw)), [raw]);
 }

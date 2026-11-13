@@ -18,7 +18,7 @@ interface WalletCtx {
 const Ctx = createContext<WalletCtx | null>(null);
 
 export function WalletProvider({ children }: { children: ReactNode }) {
-  const wc = useWizardConnect({ dappName: 'CommitCash' });
+  const wc = useWizardConnect({ dappName: 'Vouch' });
   const stakerPubkeyHex = useMemo(() => {
     if (wc.state !== 'connected' || !wc.manager) return null;
     const child = childIndexOfPathName('receive') ?? 0;

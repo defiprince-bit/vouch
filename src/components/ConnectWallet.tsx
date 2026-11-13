@@ -1,7 +1,7 @@
 'use client';
 import { useMemo } from 'react';
 import { hexToBin } from '@bitauth/libauth';
-import { stakerP2pkhAddress } from '@/lib/commitcash';
+import { stakerP2pkhAddress } from '@/lib/vouch';
 import { useWallet } from './WalletProvider';
 
 const short = (a: string) => a.replace(/^(\w+:\w{4})\w+(\w{4})$/, '$1…$2');

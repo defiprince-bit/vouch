@@ -1,6 +1,6 @@
 pragma cashscript ^0.14.0;
 
-// CommitCash pledge covenant (trust model: ../trust-model.md).
+// Vouch pledge covenant (trust model: ../trust-model.md).
 //
 // One pledge = one contract address (pledgeId makes every address unique).
 //
@@ -19,7 +19,7 @@ pragma cashscript ^0.14.0;
 // WizardConnect only exposes transaction signing. A tx signature with the default
 // SIGHASH_ALL | SIGHASH_UTXOS commits to the exact outpoint being spent, so a verifier
 // signature for one pledge can never be replayed against another pledge.
-contract CommitCash(
+contract Vouch(
     pubkey stakerPk,
     pubkey verifierPk,
     bytes beneficiaryLock,

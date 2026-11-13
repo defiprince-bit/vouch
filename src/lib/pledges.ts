@@ -19,17 +19,20 @@ export interface StoredPledge {
   outcome?: 'kept' | 'broken' | 'settled'; // set when this browser sent the closing tx
 }
 
-export const PLEDGES_KEY = 'commitcash-pledges';
-export const PLEDGES_EVENT = 'commitcash-pledges-changed';
+export const PLEDGES_KEY = 'vouch-pledges';
+/** Key used before the rename to Vouch; read as a fallback so existing pledges aren't lost. */
+export const LEGACY_PLEDGES_KEY = 'commitcash-pledges';
+export const PLEDGES_EVENT = 'vouch-pledges-changed';
 const KEY = PLEDGES_KEY;
+
+/** Raw JSON of this browser's pledges (new key first, then the pre-rename key). */
+export function readPledgesRaw(storage: Pick<Storage, 'getItem'>): string {
+  return storage.getItem(KEY) ?? storage.getItem(LEGACY_PLEDGES_KEY) ?? '[]';
+}
 
 export function loadPledges(): StoredPledge[] {
   if (typeof window === 'undefined') return [];
-  try {
-    return JSON.parse(window.localStorage.getItem(KEY) ?? '[]') as StoredPledge[];
-  } catch {
-    return [];
-  }
+  return parsePledges(readPledgesRaw(window.localStorage));
 }
 
 export function savePledge(p: StoredPledge) {

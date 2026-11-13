@@ -1,4 +1,4 @@
-# CommitCash: trust model, keep vs break (1-pager)
+# Vouch: trust model, keep vs break (1-pager)
 
 **Scope:** v1 rules apply: BCH only, brand-new code, no AI judge, no bridge. Chipnet first, dust-only on mainnet.
 

@@ -36,3 +36,13 @@ describe('format helpers', () => {
     expect(shortAddr('short')).toBe('short');
   });
 });
+
+import { readPledgesRaw } from '../src/lib/pledges';
+describe('pledge storage after the rename', () => {
+  const store = (m: Record<string, string>) => ({ getItem: (k: string) => m[k] ?? null });
+  it('prefers vouch-pledges, falls back to the legacy commitcash-pledges key', () => {
+    expect(readPledgesRaw(store({ 'vouch-pledges': '[1]', 'commitcash-pledges': '[2]' }))).toBe('[1]');
+    expect(readPledgesRaw(store({ 'commitcash-pledges': '[2]' }))).toBe('[2]');
+    expect(readPledgesRaw(store({}))).toBe('[]');
+  });
+});

@@ -14,7 +14,7 @@ import {
   buildForfeit,
   stakerP2pkhAddress,
   DEFAULT_FEE,
-} from './commitcash';
+} from './vouch';
 import { toWcSignRequest, keepSignaturesFromTx, DUMMY_SIGNATURE, STAKER_PATH, type InputPath } from './wc';
 import type { StoredPledge } from './pledges';
 import type { VerifyRequest } from './share';
@@ -81,7 +81,7 @@ export async function lockFromWallet(manager: DappConnectionManager, p: StoredPl
   const walletUtxos = await provider.getUtxos(walletAddress);
   const builder = buildLock({ provider, walletUtxos, walletAddress, contractAddress: contract.address, stake: BigInt(p.stakeSats) });
   const paths = walletUtxos.filter((u) => !u.token).map((_, i): InputPath => [i, STAKER_PATH.name, STAKER_PATH.index]);
-  return walletSign(manager, provider, builder, paths, { broadcast: true, userPrompt: `CommitCash: lock ${p.stakeSats} sats on “${p.promise}”` });
+  return walletSign(manager, provider, builder, paths, { broadcast: true, userPrompt: `Vouch: lock ${p.stakeSats} sats on “${p.promise}”` });
 }
 
 /** Demo verifier flow (verifier first): get the verifier's signature, then the staker signs the refund and it's pushed. */
@@ -103,7 +103,7 @@ export async function keepWithDemoVerifier(manager: DappConnectionManager, p: St
     verifierSig: hexToBin(json.verifierSig),
     stakerAddress: stakerP2pkhAddress(hexToBin(p.stakerPubkey), p.network),
   });
-  return walletSign(manager, provider, builder, [stakerPath], { broadcast: true, userPrompt: 'CommitCash: verifier approved. Sign to get your stake back.' });
+  return walletSign(manager, provider, builder, [stakerPath], { broadcast: true, userPrompt: 'Vouch: verifier approved. Sign to get your stake back.' });
 }
 
 /** Friend flow (staker first): pre-sign the refund, return a verify request to share. Nothing is broadcast. */
@@ -120,7 +120,7 @@ export async function prepareVerifyRequest(manager: DappConnectionManager, p: St
   });
   const { txHex } = await walletSign(manager, provider, builder, [stakerPath], {
     broadcast: false,
-    userPrompt: 'CommitCash: pre-sign your refund. Nothing is sent until your verifier approves.',
+    userPrompt: 'Vouch: pre-sign your refund. Nothing is sent until your verifier approves.',
   });
   const { stakerSig } = keepSignaturesFromTx(txHex);
   return {
@@ -167,7 +167,7 @@ export async function approveKeepAsVerifier(manager: DappConnectionManager, r: V
   });
   return walletSign(manager, provider, builder, [[0, STAKER_PATH.name, walletIndex]], {
     broadcast: true,
-    userPrompt: `CommitCash: approve “${r.pledge.promise}”. Signing sends the stake back to your friend.`,
+    userPrompt: `Vouch: approve “${r.pledge.promise}”. Signing sends the stake back to your friend.`,
   });
 }
 
@@ -178,7 +178,7 @@ export async function breakAsVerifier(manager: DappConnectionManager, r: VerifyR
   const builder = buildBreakByVerifier({ contract, provider, utxo, verifierSig: placeholderSignature(), beneficiaryAddress: r.pledge.beneficiaryAddress });
   return walletSign(manager, provider, builder, [[0, STAKER_PATH.name, walletIndex]], {
     broadcast: true,
-    userPrompt: `CommitCash: rule “${r.pledge.promise}” broken. The stake goes to the beneficiary.`,
+    userPrompt: `Vouch: rule “${r.pledge.promise}” broken. The stake goes to the beneficiary.`,
   });
 }
 
@@ -187,7 +187,7 @@ export async function breakFromWallet(manager: DappConnectionManager, p: StoredP
   const { provider, contract } = pledgeContract(p);
   const utxo = await lockedUtxo(contract);
   const builder = buildBreakByStaker({ contract, provider, utxo, stakerSig: placeholderSignature(), beneficiaryAddress: p.beneficiaryAddress });
-  return walletSign(manager, provider, builder, [stakerPath], { broadcast: true, userPrompt: 'CommitCash: I broke it. Send the stake to the beneficiary.' });
+  return walletSign(manager, provider, builder, [stakerPath], { broadcast: true, userPrompt: 'Vouch: I broke it. Send the stake to the beneficiary.' });
 }
 
 /** Settle an expired pledge: from the browser first, then via our server as a backup. */

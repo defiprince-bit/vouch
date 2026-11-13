@@ -2,7 +2,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { hexToBin } from '@bitauth/libauth';
-import { createPledgeContract, getProvider, newPledgeId, validatePledge, verifyByHeight, MIN_STAKE, DEFAULT_MAX_FEE } from '@/lib/commitcash';
+import { createPledgeContract, getProvider, newPledgeId, validatePledge, verifyByHeight, MIN_STAKE, DEFAULT_MAX_FEE } from '@/lib/vouch';
 import { savePledge, type StoredPledge } from '@/lib/pledges';
 import { NETWORK, EXPLORER_ADDR } from '@/lib/config';
 import { bchToSats, blocksUntil, formatBch, formatDateTime, formatSats, toDateTimeLocal, estimateBlockTime } from '@/lib/format';
@@ -44,7 +44,7 @@ export function CreatePledgeForm() {
   const deadlineMs = new Date(deadlineLocal).getTime();
   const stakerHex = wallet.stakerPubkeyHex ?? manualStaker.trim();
   const verifierHex = verifierMode === 'demo' ? (demo.pubkey ?? '') : friendKey.trim();
-  const verifierLabel = verifierMode === 'demo' ? 'CommitCash demo' : friendName.trim() || 'Your friend';
+  const verifierLabel = verifierMode === 'demo' ? 'Vouch demo' : friendName.trim() || 'Your friend';
   const beneLabel = beneName.trim() || 'The beneficiary';
   const sameAddr = errors.includes(SAME_ADDR);
   const preview = useMemo(
@@ -137,7 +137,7 @@ export function CreatePledgeForm() {
   const head = (
     <header className="screen-head">
       <div>
-        <p className="crumbs"><Link href="/">CommitCash</Link> / Create</p>
+        <p className="crumbs"><Link href="/">Vouch</Link> / Create</p>
         <h1>Create a pledge</h1>
         <p className="lede">Name the habit, amount, verifier, and who is paid if you slip.</p>
       </div>
@@ -157,7 +157,7 @@ export function CreatePledgeForm() {
       stake={preview.stake}
       deadline={draft?.deadlineAt ? formatDateTime(draft.deadlineAt) : preview.deadline}
       verifier={verifierLabel}
-      verifierNote={verifierMode === 'demo' ? 'Demo verifier is run by CommitCash.' : undefined}
+      verifierNote={verifierMode === 'demo' ? 'Demo verifier is run by Vouch.' : undefined}
       beneficiary={beneLabel}
       beneficiaryAddr={beneficiary.trim() || undefined}
       keepCopy="Coins return to you after you sign and the verifier signs the refund in their wallet."
@@ -203,7 +203,7 @@ export function CreatePledgeForm() {
                   <label className="choice">
                     <input type="radio" name="verifier-type" checked={verifierMode === 'demo'} onChange={() => setVerifierMode('demo')} />
                     <span>
-                      <b>CommitCash demo verifier</b>
+                      <b>Vouch demo verifier</b>
                       <span className="choice-help">Default. The app signs the refund in the demo wallet.</span>
                     </span>
                   </label>
@@ -284,7 +284,7 @@ export function CreatePledgeForm() {
                 <div className="kv-row"><dt>Habit</dt><dd>{draft.promise}</dd></div>
                 <div className="kv-row"><dt>Deadline</dt><dd>{draft.deadlineAt ? formatDateTime(draft.deadlineAt) : ''} <span className="addr">(block {draft.deadline})</span></dd></div>
                 <div className="kv-row"><dt>Verify by</dt><dd>block {verifyByHeight(draft.deadline)}, about an hour before the deadline</dd></div>
-                <div className="kv-row"><dt>Verifier</dt><dd>{verifierLabel}{draft.verifierKind === 'demo' && <span className="footnote" style={{ display: 'block' }}>Demo verifier is run by CommitCash.</span>}</dd></div>
+                <div className="kv-row"><dt>Verifier</dt><dd>{verifierLabel}{draft.verifierKind === 'demo' && <span className="footnote" style={{ display: 'block' }}>Demo verifier is run by Vouch.</span>}</dd></div>
                 <div className="kv-row"><dt>Contract</dt><dd className="addr"><a href={EXPLORER_ADDR + draft.contractAddress} target="_blank" rel="noreferrer">{draft.contractAddress}</a></dd></div>
               </dl>
               {lockMsg && <p className="callout" style={{ marginTop: 12 }}>{lockMsg}</p>}

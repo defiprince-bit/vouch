@@ -1,4 +1,4 @@
-// CommitCash demo verifier (operated by this app). Key: COMMITCASH_VERIFIER_WIF (server-only env).
+// Vouch demo verifier (operated by this app). Key: COMMITCASH_VERIFIER_WIF (server-only env).
 import { NextResponse, connection, type NextRequest } from 'next/server';
 import { getProvider } from '@/lib/providers';
 import { demoVerifierAction, loadVerifierKey, verifierPubkeyHex, VerifierError } from '@/server/verifier';

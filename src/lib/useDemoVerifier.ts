@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 
-/** Public key of the CommitCash demo verifier (operated by this app), or null if not configured. */
+/** Public key of the Vouch demo verifier (operated by this app), or null if not configured. */
 export function useDemoVerifier(): { loading: boolean; pubkey: string | null } {
   const [state, setState] = useState<{ loading: boolean; pubkey: string | null }>({ loading: true, pubkey: null });
   useEffect(() => {

@@ -1,4 +1,4 @@
-// CommitCash contract helpers: instantiate a pledge covenant and build its four spend transactions.
+// Vouch contract helpers: instantiate a pledge covenant and build its four spend transactions.
 import {
   Contract,
   TransactionBuilder,
@@ -18,7 +18,7 @@ import {
   hexToBin,
   CashAddressType,
 } from '@bitauth/libauth';
-import artifact from './CommitCash.artifact';
+import artifact from './Vouch.artifact';
 
 export type { BchNetwork } from './providers';
 

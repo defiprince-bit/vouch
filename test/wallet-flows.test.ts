@@ -12,7 +12,7 @@ import {
   stakerP2pkhAddress,
   newPledgeId,
   DEFAULT_FEE,
-} from '@/lib/commitcash';
+} from '@/lib/vouch';
 import { toWcSignRequest, keepSignaturesFromTx, DUMMY_SIGNATURE, STAKER_PATH } from '@/lib/wc';
 import { encodeVerifyRequest, decodeVerifyRequest, verifyLink, type VerifyRequest } from '@/lib/share';
 import { FallbackNetworkProvider } from '@/lib/providers';

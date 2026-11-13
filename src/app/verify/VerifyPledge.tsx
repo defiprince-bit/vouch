@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { hexToBin } from '@bitauth/libauth';
 import { decodeVerifyRequest, type VerifyRequest } from '@/lib/share';
-import { stakerP2pkhAddress, verifyByHeight } from '@/lib/commitcash';
+import { stakerP2pkhAddress, verifyByHeight } from '@/lib/vouch';
 import { formatBch, formatDateTime, shortAddr, BLOCK_SECONDS } from '@/lib/format';
 import { TxLink } from '@/components/TxLink';
 import { Ticket } from '@/components/Ticket';
@@ -171,9 +171,9 @@ export function VerifyPledge() {
                 ) : isDemoVerifier ? (
                   <>
                     <button className="btn btn-keep btn-lg btn-block" type="button" disabled={blocked} onClick={demoApprove}>
-                      {busy ? 'Sending…' : 'Approve with the CommitCash demo verifier'}
+                      {busy ? 'Sending…' : 'Approve with the Vouch demo verifier'}
                     </button>
-                    <p className="footnote" style={{ marginTop: 10 }}>This pledge uses the demo verifier, which is run by CommitCash.</p>
+                    <p className="footnote" style={{ marginTop: 10 }}>This pledge uses the demo verifier, which is run by Vouch.</p>
                   </>
                 ) : !connected ? (
                   <>
