@@ -6,7 +6,6 @@ import { binToHex, hexToBin } from '@bitauth/libauth';
 import {
   createPledgeContract,
   buildKeep,
-  buildBreakByVerifier,
   buildForfeit,
   verifierKeepSignature,
   verifyByHeight,
@@ -106,12 +105,23 @@ export async function approveKeep(
 }
 
 /** Demo verifier rules the promise broken: stake goes to the beneficiary. */
-export async function approveBreak(body: { pledge: unknown; confirm?: boolean }, provider: NetworkProvider, key: SignatureTemplate) {
-  if (body.confirm !== true) throw new VerifierError('Confirm the break');
-  const { terms, contract, utxo } = await loadPledge(body.pledge, provider);
-  if (terms.verifierPubkey.toLowerCase() !== verifierPubkeyHex(key)) throw new VerifierError('This pledge names a different verifier', 403);
-  const tx = await buildBreakByVerifier({ contract, provider, utxo, verifierSig: key, beneficiaryAddress: terms.beneficiaryAddress }).send();
-  return { txid: tx.txid };
+/**
+ * The demo verifier only ever co-signs KEEP. It never signs breakByVerifier: this endpoint can't
+ * authenticate the caller, so anyone holding a pledge's terms (the beneficiary included) could
+ * otherwise force a demo pledge to break. A demo pledge ends by keep, by expiry (forfeit), or by
+ * the staker's own breakByStaker, which the staker signs alone in their wallet.
+ */
+export const DEMO_BREAK_REFUSED =
+  'The demo verifier never signs a break. To break your own pledge, sign "I broke it" in your wallet; after the deadline anyone can settle it to the beneficiary.';
+
+export async function demoVerifierAction(
+  body: { action?: string; pledge: unknown; confirm?: boolean; note?: string; stakerSig?: string },
+  provider: NetworkProvider,
+  key: SignatureTemplate,
+) {
+  if (body.action === 'keep') return approveKeep(body, provider, key);
+  if (body.action === 'break') throw new VerifierError(DEMO_BREAK_REFUSED, 403);
+  throw new VerifierError('action must be keep');
 }
 
 /** Anyone may settle an expired pledge to its beneficiary; no key needed. */

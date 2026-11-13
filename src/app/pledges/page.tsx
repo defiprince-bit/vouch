@@ -1,10 +1,12 @@
-import { PledgeList } from './PledgeList';
+import { Suspense } from 'react';
+import { PledgesRoute } from './PledgesRoute';
 
 export default function PledgesPage() {
   return (
-    <section className="py-10">
-      <h1 className="mb-6 text-3xl font-bold">My pledges</h1>
-      <PledgeList />
-    </section>
+    <main className="wrap page">
+      <Suspense fallback={<p className="hint">Loading…</p>}>
+        <PledgesRoute />
+      </Suspense>
+    </main>
   );
 }

@@ -5,16 +5,16 @@ import { NetworkBadge } from './NetworkBadge';
 
 export function Header() {
   return (
-    <header className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-4">
-      <div className="flex items-center gap-3">
+    <header className="nav">
+      <div className="nav-inner">
         <Logo />
-        <NetworkBadge />
+        <div className="nav-actions">
+          <NetworkBadge />
+          <Link className="btn btn-ghost nav-link" href="/pledges">My pledges</Link>
+          <Link className="btn btn-ghost nav-link" href="/create">New pledge</Link>
+          <ConnectWallet />
+        </div>
       </div>
-      <nav className="flex items-center gap-4 text-sm">
-        <Link href="/create" className="hover:text-emerald-300">New pledge</Link>
-        <Link href="/pledges" className="hover:text-emerald-300">My pledges</Link>
-        <ConnectWallet />
-      </nav>
     </header>
   );
 }

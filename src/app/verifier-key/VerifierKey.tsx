@@ -1,15 +1,30 @@
 'use client';
+import { useState } from 'react';
+import { ConnectWallet } from '@/components/ConnectWallet';
 import { useWallet } from '@/components/WalletProvider';
 
 export function VerifierKey() {
   const w = useWallet();
-  if (w.state !== 'connected' || !w.stakerPubkeyHex) return <p className="text-neutral-300">Connect your wallet (top right) to see your verifier key.</p>;
+  const [copied, setCopied] = useState(false);
+  if (w.state !== 'connected' || !w.stakerPubkeyHex) {
+    return (
+      <div className="panel" style={{ maxWidth: 560 }}>
+        <h2>Your verifier key</h2>
+        <p className="hint" style={{ marginBottom: 12 }}>Connect your wallet to see it.</p>
+        <ConnectWallet size="lg" />
+      </div>
+    );
+  }
   return (
-    <div className="max-w-xl space-y-2">
-      <code className="block break-all rounded bg-black/40 p-3 text-sm">{w.stakerPubkeyHex}</code>
-      <button onClick={() => navigator.clipboard.writeText(w.stakerPubkeyHex!)} className="rounded-full border border-neutral-600 px-4 py-2 text-sm">
-        Copy key
-      </button>
+    <div className="panel" style={{ maxWidth: 560 }}>
+      <h2>Your verifier key</h2>
+      <div className="copy-link">
+        <input readOnly value={w.stakerPubkeyHex} aria-label="Verifier key" onFocus={(e) => e.currentTarget.select()} />
+        <button className="btn btn-primary" type="button" onClick={async () => { await navigator.clipboard.writeText(w.stakerPubkeyHex!).catch(() => {}); setCopied(true); setTimeout(() => setCopied(false), 1200); }}>
+          {copied ? 'Copied' : 'Copy key'}
+        </button>
+      </div>
+      <p className="hint" style={{ marginTop: 8 }}>This is a public key, safe to share.</p>
     </div>
   );
 }

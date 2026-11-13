@@ -9,7 +9,8 @@ export interface VerifyRequest {
   pledge: Pick<
     StoredPledge,
     'id' | 'promise' | 'stakeSats' | 'deadline' | 'beneficiaryAddress' | 'stakerPubkey' | 'verifierPubkey' | 'contractAddress' | 'network'
-  >;
+  > &
+    Partial<Pick<StoredPledge, 'beneficiaryName' | 'deadlineAt'>>; // display only; never used to build transactions
   utxo: { txid: string; vout: number; satoshis: string };
   fee: string;
   /** Staker's signature over the deterministic keep tx (hex). */
@@ -33,7 +34,7 @@ export function encodeVerifyRequest(r: VerifyRequest): string {
 export function decodeVerifyRequest(fragment: string): VerifyRequest {
   let r: VerifyRequest;
   try {
-    r = JSON.parse(fromB64Url(fragment.replace(/^#/, ''))) as VerifyRequest;
+    r = JSON.parse(fromB64Url(fragment.replace(/^#/, '').replace(/^pledge=/, ''))) as VerifyRequest;
   } catch {
     throw new Error('Invalid verify link: ask your friend to copy the whole link again');
   }
@@ -42,8 +43,9 @@ export function decodeVerifyRequest(fragment: string): VerifyRequest {
   return r;
 }
 
+/** `/verify#pledge=…`: the data stays in the fragment, which browsers never send to the server. */
 export function verifyLink(origin: string, r: VerifyRequest): string {
-  return `${origin}/verify#${encodeVerifyRequest(r)}`;
+  return `${origin}/verify#pledge=${encodeVerifyRequest(r)}`;
 }
 
 export const sigToHex = (s: Uint8Array) => binToHex(s);

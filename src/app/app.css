@@ -1,0 +1,36 @@
+/* App-side overrides on top of the synced design pack (design.css). */
+
+/* Readability: no mono text under 14px for footnotes/addresses, 13px for uppercase labels. */
+:root { --fs-foot: 0.875rem; }
+.footnote, .mono, address, .addr, .site-footer, .hint, .confirm-note { font-size: max(var(--fs-foot), 0.875rem); }
+.field-label, .eyebrow, .ticket-kicker, .example-tag, .step-num, .stub-label, .outcome b, .kv-row dt, .progress, .todo, .badge { font-size: max(13px, 0.8125rem); }
+.outcome { font-size: 0.875rem; }
+
+/* Hero ~20% smaller than the mock so the three steps sit above the fold at 1440x900. */
+.hero h1 { font-size: calc(var(--fs-hero) * 0.8); }
+
+/* Banner inside a flex layout; long addresses wrap. */
+.banner .addr { word-break: break-all; }
+.banner .todo { margin-left: 2px; }
+
+/* Explorer tx links: always visible, full-width tap target. */
+.tx-link { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; padding: 12px 14px; border: 1.5px solid var(--mint-deep); border-radius: 10px; background: var(--keep-tint); text-decoration: none; color: var(--ink); }
+.tx-link:hover { background: #C6E6D9; color: var(--ink); }
+.tx-link strong { color: var(--mint-deep); font-weight: 700; }
+.tx-link .addr { color: var(--ink-soft); }
+
+/* Small helpers the mocks don't have. */
+.stack { display: grid; gap: 10px; }
+.row-wrap { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.error-text { color: var(--forfeit); font-size: 0.9375rem; margin: 8px 0 0; }
+.ok-text { color: var(--mint-deep); font-size: 0.9375rem; margin: 8px 0 0; }
+.panel textarea { width: 100%; min-height: 72px; padding: 10px 12px; border: 1.5px solid var(--line-strong); border-radius: 10px; background: var(--white); }
+.empty { background: var(--white); border: 1px dashed var(--line-strong); border-radius: var(--radius); padding: 28px; text-align: center; }
+.wallet-chip { cursor: pointer; }
+.link-button { background: none; border: 0; padding: 0; color: var(--mint-deep); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; font: inherit; }
+.countdown p { font-size: 0.9375rem; }
+.confirm-box { display: grid; gap: 8px; margin-top: 10px; }
+.confirm-box label { font-weight: 600; font-size: 0.9375rem; }
+.panel .tx-link:first-of-type { margin-top: 12px; }
+/* Keep inputs aligned across a .field-row when one side has a longer hint. */
+.field { align-content: start; }

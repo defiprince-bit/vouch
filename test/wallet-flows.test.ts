@@ -14,9 +14,9 @@ import {
   DEFAULT_FEE,
 } from '@/lib/commitcash';
 import { toWcSignRequest, keepSignaturesFromTx, DUMMY_SIGNATURE, STAKER_PATH } from '@/lib/wc';
-import { encodeVerifyRequest, decodeVerifyRequest, type VerifyRequest } from '@/lib/share';
+import { encodeVerifyRequest, decodeVerifyRequest, verifyLink, type VerifyRequest } from '@/lib/share';
 import { FallbackNetworkProvider } from '@/lib/providers';
-import { approveKeep, approveBreak, settleExpired, loadVerifierKey, verifierPubkeyHex, VerifierError } from '@/server/verifier';
+import { approveKeep, demoVerifierAction, settleExpired, loadVerifierKey, verifierPubkeyHex, VerifierError } from '@/server/verifier';
 import { mockWalletSign } from './mock-wallet';
 
 function makeKey() {
@@ -121,6 +121,9 @@ describe('wallet + verifier flows', () => {
       fee: DEFAULT_FEE.toString(),
       stakerSig: binToHex(stakerSig),
     };
+    const url = verifyLink('https://app.example', link);
+    expect(url).toMatch(/^https:\/\/app\.example\/verify#pledge=[A-Za-z0-9_-]+$/);
+    expect(decodeVerifyRequest(new URL(url).hash)).toEqual(decodeVerifyRequest(encodeVerifyRequest(link))); // '#pledge=…' and bare both decode
     const got = decodeVerifyRequest(encodeVerifyRequest(link));
     const friendBuilder = buildKeep({
       contract,
@@ -164,11 +167,18 @@ describe('wallet + verifier flows', () => {
     await expect(approveKeep({ pledge: empty.terms, confirm: true, note: 'did it' }, provider, demoKey)).rejects.toBeInstanceOf(VerifierError);
   });
 
-  it('demo verifier break pays only the beneficiary', async () => {
+  it('demo verifier refuses to break: anyone holding the terms (e.g. the beneficiary) cannot force a break', async () => {
     const { contract, terms } = pledge(demo.pub);
     locked(contract);
-    await approveBreak({ pledge: terms, confirm: true }, provider, demoKey);
-    expect((await provider.getUtxos(beneficiary.address))[0].satoshis).toBe(STAKE - DEFAULT_FEE);
+    const err = await demoVerifierAction({ action: 'break', pledge: terms, confirm: true }, provider, demoKey).catch((e) => e);
+    expect(err).toBeInstanceOf(VerifierError);
+    expect((err as VerifierError).message).toMatch(/never signs a break/);
+    expect((await contract.getUtxos())[0].satoshis).toBe(STAKE); // still locked
+    expect(await provider.getUtxos(beneficiary.address)).toHaveLength(0);
+    await expect(demoVerifierAction({ action: 'whatever', pledge: terms }, provider, demoKey)).rejects.toThrow(/keep/);
+    // keep still works through the same entry point
+    const r = await demoVerifierAction({ action: 'keep', pledge: terms, confirm: true, note: 'did it' }, provider, demoKey);
+    expect(r).toHaveProperty('verifierSig');
   });
 
   it('settleExpired: refuses before the deadline, settles after (no key)', async () => {

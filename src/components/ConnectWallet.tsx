@@ -1,25 +1,32 @@
 'use client';
+import { useMemo } from 'react';
+import { hexToBin } from '@bitauth/libauth';
+import { stakerP2pkhAddress } from '@/lib/commitcash';
 import { useWallet } from './WalletProvider';
 
-export function ConnectWallet() {
+const short = (a: string) => a.replace(/^(\w+:\w{4})\w+(\w{4})$/, '$1…$2');
+
+export function ConnectWallet({ size }: { size?: 'lg' }) {
   const w = useWallet();
+  const addr = useMemo(() => (w.stakerPubkeyHex ? stakerP2pkhAddress(hexToBin(w.stakerPubkeyHex)) : null), [w.stakerPubkeyHex]);
   if (w.state === 'connected') {
     return (
-      <button onClick={() => w.disconnect()} className="rounded-full border border-emerald-400/50 px-4 py-2 text-sm text-emerald-300">
-        {w.walletName ?? 'Wallet'} connected · Disconnect
+      <button type="button" className="wallet-chip" onClick={() => w.disconnect()} title={`Connected via WizardConnect${addr ? ` as ${addr}` : ''}. Click to disconnect.`}>
+        <i />
+        <span className="addr">{addr ? short(addr) : (w.walletName ?? 'Wallet')}</span>
+        <span className="chip-label">Connected</span>
       </button>
     );
   }
   return (
-    <div className="flex items-center gap-2">
-      <button
-        onClick={() => w.connect()}
-        disabled={w.state === 'connecting'}
-        className="rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-black disabled:opacity-60"
-      >
-        {w.state === 'connecting' ? 'Waiting for wallet…' : 'Connect Wallet'}
-      </button>
-      {w.error && <span className="text-xs text-red-400">{w.error}</span>}
-    </div>
+    <button
+      type="button"
+      className={`btn btn-primary${size === 'lg' ? ' btn-lg' : ''}`}
+      onClick={() => w.connect()}
+      disabled={w.state === 'connecting'}
+      title={w.error ?? undefined}
+    >
+      {w.state === 'connecting' ? 'Waiting for wallet…' : 'Connect wallet'}
+    </button>
   );
 }

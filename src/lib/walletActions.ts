@@ -135,6 +135,8 @@ export async function prepareVerifyRequest(manager: DappConnectionManager, p: St
       verifierPubkey: p.verifierPubkey,
       contractAddress: p.contractAddress,
       network: p.network,
+      ...(p.beneficiaryName ? { beneficiaryName: p.beneficiaryName } : {}),
+      ...(p.deadlineAt ? { deadlineAt: p.deadlineAt } : {}),
     },
     utxo: { txid: utxo.txid, vout: utxo.vout, satoshis: utxo.satoshis.toString() },
     fee: DEFAULT_FEE.toString(),

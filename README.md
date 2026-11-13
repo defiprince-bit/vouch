@@ -28,8 +28,8 @@ Every path:
 - **Collusion:** verifier + beneficiary can lie "broken" (the UI refuses verifier = beneficiary). Staker + verifier can lie "kept"; that's inherent, so it's a bet, not a guarantee. Staker = verifier is allowed and labelled a self-honour pledge.
 - **Replay:** verifier approval is a transaction signature (`checkSig`, default `SIGHASH_ALL | SIGHASH_UTXOS`), which commits to the exact outpoint being spent. A verifier signature for pledge A can't be reused on pledge B (there's a test for this). We use `checkSig` rather than `checkDataSig` because WizardConnect only supports transaction signing (`sign_transaction_request`); it has no raw-message signing.
 - **Keep vs forfeit race:** script can't say "before T", so keep stays valid after the deadline, and once it passes, whichever valid tx miners see first wins. The app tells the verifier to sign before deadline minus 1 hour.
-- **Demo verifier = operated by this app.** If you don't name a friend, your verifier is the *CommitCash demo verifier*: a key held server-side by whoever runs this deployment (`COMMITCASH_VERIFIER_WIF`). It is centralised and confirm-based: it co-signs "kept" when you tick a confirm box and write a short note, before deadline minus ~1 hour. It does not check that you actually did the thing. If you want real accountability, name a friend.
-- **Demo verifier "break"** is honour-based too (it signs breakByVerifier on request), so anyone who knows a demo pledge's terms could ask it to break that pledge. Coins still only go to the beneficiary you chose. For the hackathon demo that's the accepted trade-off; a friend verifier doesn't have it.
+- **Demo verifier = operated by this app, honour system.** If you don't name a friend, your verifier is the *CommitCash demo verifier*: a key held server-side by whoever runs this deployment (`COMMITCASH_VERIFIER_WIF`). It co-signs **keep** for whoever asks (after a confirm box and a short note, before deadline minus ~1 hour); it does not check that you did the thing. It's for trying the app. **For a real pledge, name a friend as verifier.**
+- **The demo verifier never signs a break.** `/api/verifier` can't authenticate its caller, so if it signed `breakByVerifier`, anyone holding a pledge's terms (the beneficiary included) could force a demo pledge to break. It refuses `action: "break"` (HTTP 403, covered by a test). A demo pledge ends only by keep, by expiry (`forfeit`), or by the staker's own `breakByStaker`, which the staker signs alone in their wallet.
 
 Full one-pager: [`trust-model.md`](trust-model.md).
 
@@ -37,7 +37,7 @@ Full one-pager: [`trust-model.md`](trust-model.md).
 
 ```bash
 npm install
-npm test               # 34 tests: 20 covenant paths/attacks + 14 wallet-flow tests (mock WizardConnect wallet)
+npm test               # 39 tests: 20 covenant paths/attacks, 14 wallet flows (mock WizardConnect wallet), 5 format helpers
 npm run build
 npm run dev
 npm run compile:contract   # after editing contracts/CommitCash.cash
@@ -84,15 +84,21 @@ npm run e2e:app -- http://localhost:3311 all    # keep1 | keep2 | settle | all
 [WizardConnect](https://docs.riftenlabs.com/wizardconnect/) (`@wizardconnect/react`): **Connect Wallet** opens a QR dialog (with a copy-link option for desktop wallets). The staker key is the wallet's first `receive` pubkey. Every signature is a normal transaction signature via `sign_transaction_request` (`SIGHASH_ALL|UTXOS|FORKID`); WizardConnect has no message signing.
 
 - **Lock:** the app builds the funding tx from your wallet's UTXOs (placeholder P2PKH unlockers); your wallet signs and broadcasts.
-- **Keep, demo verifier:** you confirm + write a note → `/api/verifier` checks the pledge on-chain and returns its signature → your wallet signs the keep tx and broadcasts. Coins go back to your address.
-- **Keep, friend verifier:** your wallet pre-signs the keep tx (not broadcast) → the app makes a **verify my pledge** link (`/verify#…`, everything in the URL fragment, never sent to our server) → your friend opens it, connects their wallet, and **approves by signing the refund in their wallet**, which broadcasts it. Your friend gets their verifier key to share from `/verifier-key`.
-- **Break:** you sign breakByStaker (stake to the beneficiary); a friend verifier can also rule it broken from the verify link.
+- **Keep, demo verifier (honour system):** you confirm + write a note → `/api/verifier` checks the pledge on-chain and returns its signature → your wallet signs the keep tx and broadcasts. Coins go back to your address. The demo verifier approves any refund you ask for; for real stakes, pick a friend.
+- **Keep, friend verifier:** your wallet pre-signs the keep tx (not broadcast) → the app makes a **verify my pledge** link (`/verify#pledge=…`, everything in the URL fragment, never sent to our server) → your friend opens it, connects their wallet, and **approves by signing the refund in their wallet**, which broadcasts it. Your friend gets their verifier key to share from `/verifier-key`.
+- **Break:** staker only in the app: you sign breakByStaker yourself (stake to the beneficiary). The demo verifier never breaks. (The contract still has `breakByVerifier`, so a friend verifier could sign one with their own key, but the UI doesn't offer it.)
 - **Settle:** after the deadline, `forfeit` needs no signature. The pledges page auto-broadcasts it for expired pledges it knows about (browser first, `/api/settle` as backup), and keeps a manual **Settle to beneficiary** button.
 - **Verify by:** the UI asks for approval by deadline − 6 blocks (~1 hour), and the demo verifier refuses after that, to avoid the keep/forfeit race.
 
 ### Chain access
 
 The browser uses Electrum over wss by default. If that fails to connect, it falls back to the app's HTTPS route `/api/chain/{height,utxos,tx,broadcast}`, which uses mainnet.cash's watch-only REST (no keys leave the browser). `NEXT_PUBLIC_BCH_PROVIDER=rest` forces HTTPS; `electrum` disables the fallback. A rejected broadcast is never retried on the other backend.
+
+## Pages
+
+`/` landing · `/create` new pledge · `/pledges` your pledges (this browser) · `/pledges/<id>` one pledge's status (countdown, Your move, Settle) · `/verify#pledge=…` a friend signs the refund (pledge data stays in the URL fragment, never sent to the server; a `?pledge=` link is accepted and moved into the fragment) · `/verifier-key` get a key to be someone's verifier.
+
+UI follows the design pack in `bchblaze/design/mocks`; `node scripts/sync-design-css.mjs <path/to/styles.css>` re-syncs its stylesheet into `src/app/design.css` (app tweaks live in `src/app/app.css`). Brand files are in `public/brand/`; swap the logo in `src/components/Logo.tsx`.
 
 ## Environment variables
 
@@ -103,7 +109,7 @@ See [`.env.example`](.env.example). For a deployment:
 | `NEXT_PUBLIC_BCH_NETWORK` | public | `chipnet` (default) or `mainnet` |
 | `NEXT_PUBLIC_BCH_PROVIDER` | public | `auto` (default), `electrum`, `rest` |
 | `NEXT_PUBLIC_SLIDES_URL`, `NEXT_PUBLIC_REPO_URL`, `NEXT_PUBLIC_EMBER_ADDRESS` | public | banner links |
-| `COMMITCASH_VERIFIER_WIF` | **server-only** | the app-operated demo verifier key. Never `NEXT_PUBLIC_`. Unset = demo verifier off |
+| `COMMITCASH_VERIFIER_WIF` | **server-only** | the app-operated demo verifier key (co-signs keep only). Never `NEXT_PUBLIC_`. Unset = demo verifier off |
 
 ## License
 

@@ -1,11 +1,26 @@
 'use client';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import Link from 'next/link';
+import { hexToBin } from '@bitauth/libauth';
 import { decodeVerifyRequest, type VerifyRequest } from '@/lib/share';
-import { verifyByHeight } from '@/lib/commitcash';
+import { stakerP2pkhAddress, verifyByHeight } from '@/lib/commitcash';
+import { formatBch, formatDateTime, shortAddr, BLOCK_SECONDS } from '@/lib/format';
 import { TxLink } from '@/components/TxLink';
+import { Ticket } from '@/components/Ticket';
+import { ConnectWallet } from '@/components/ConnectWallet';
 import { useWallet } from '@/components/WalletProvider';
 import { useDemoVerifier } from '@/lib/useDemoVerifier';
-import { pledgeContract, findWalletIndex, approveKeepAsVerifier, breakAsVerifier } from '@/lib/walletActions';
+import { pledgeContract, findWalletIndex, approveKeepAsVerifier } from '@/lib/walletActions';
+
+// Link data lives in the URL fragment, which browsers never send to the server. A `?pledge=` form
+// is accepted too (moved into the fragment on load), but the app only ever generates # links.
+function readLinkData(): string {
+  const q = new URLSearchParams(window.location.search).get('pledge');
+  if (q && !window.location.hash) {
+    window.history.replaceState(null, '', `${window.location.pathname}#pledge=${q}`);
+  }
+  return window.location.hash || (q ? `#pledge=${q}` : '');
+}
 
 function useHash(): string | null {
   return useSyncExternalStore(
@@ -13,10 +28,12 @@ function useHash(): string | null {
       window.addEventListener('hashchange', cb);
       return () => window.removeEventListener('hashchange', cb);
     },
-    () => window.location.hash,
+    readLinkData,
     () => null,
   );
 }
+
+type Done = { txid: string; kind: 'kept' | 'broken' };
 
 export function VerifyPledge() {
   const hash = useHash();
@@ -24,6 +41,7 @@ export function VerifyPledge() {
   const demo = useDemoVerifier();
   const parsed = useMemo((): { req: VerifyRequest | null; error: string | null } => {
     if (hash === null) return { req: null, error: null };
+    if (!hash || hash === '#') return { req: null, error: 'This link is missing its pledge details. Ask your friend to copy the whole link again.' };
     try {
       return { req: decodeVerifyRequest(hash), error: null };
     } catch (e) {
@@ -31,60 +49,55 @@ export function VerifyPledge() {
     }
   }, [hash]);
   const req = parsed.req;
-  const [height, setHeight] = useState<number | null>(null);
-  const [stillLocked, setStillLocked] = useState<boolean | null>(null);
+  const [chain, setChain] = useState<{ height: number; locked: boolean; at: number } | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
-  const [txid, setTxid] = useState<string | null>(null);
+  const [done, setDone] = useState<Done | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!req) return;
     const { provider, contract } = pledgeContract(req.pledge);
     Promise.all([provider.getBlockHeight(), contract.getUtxos()])
-      .then(([h, utxos]) => {
-        setHeight(h);
-        setStillLocked(utxos.some((u) => u.txid === req.utxo.txid && u.vout === req.utxo.vout));
-      })
+      .then(([height, utxos]) => setChain({ height, locked: utxos.some((u) => u.txid === req.utxo.txid && u.vout === req.utxo.vout), at: Date.now() }))
       .catch((e: Error) => setMsg(e.message));
   }, [req]);
 
-  if (hash === null) return <p className="text-neutral-400">Loading…</p>;
-  if (!req) return <p className="text-red-400">{parsed.error ?? 'This link is missing its pledge details.'}</p>;
-
-  const verifyBy = verifyByHeight(req.pledge.deadline);
-  const tooLate = height !== null && height >= verifyBy;
-  const isDemoVerifier = !!demo.pubkey && demo.pubkey === req.pledge.verifierPubkey.toLowerCase();
-  const walletIndex = wallet.manager && wallet.state === 'connected' ? findWalletIndex(wallet.manager, req.pledge.verifierPubkey) : null;
-
-  async function go(label: string, f: () => Promise<{ txid: string }>) {
-    setBusy(true);
-    setMsg(`${label}: check your wallet…`);
-    try {
-      const r = await f();
-      setTxid(r.txid);
-      setMsg(`${label}: sent.`);
-      setStillLocked(false);
-    } catch (e) {
-      setMsg(`${label}: ${(e as Error).message}`);
-    } finally {
-      setBusy(false);
-    }
+  if (hash === null) return <p className="hint" style={{ marginTop: 32 }}>Loading…</p>;
+  if (!req) {
+    return (
+      <>
+        <header className="screen-head">
+          <div>
+            <p className="crumbs">Verify</p>
+            <h1>This link doesn’t work</h1>
+            <p className="lede">{parsed.error}</p>
+          </div>
+        </header>
+        <p>Want to be someone’s verifier? <Link href="/verifier-key">Get your verifier key</Link>.</p>
+      </>
+    );
   }
 
-  async function demoApprove() {
+  const p = req.pledge;
+  const verifyBy = verifyByHeight(p.deadline);
+  const deadlineMs = chain ? chain.at + (p.deadline - chain.height) * BLOCK_SECONDS * 1000 : (p.deadlineAt ?? 0);
+  const verifyByMs = deadlineMs ? deadlineMs - (p.deadline - verifyBy) * BLOCK_SECONDS * 1000 : 0;
+  const tooLate = chain !== null && chain.height >= verifyBy;
+  const settled = chain !== null && !chain.locked && !done;
+  const isDemoVerifier = !!demo.pubkey && demo.pubkey === p.verifierPubkey.toLowerCase();
+  const connected = wallet.state === 'connected' && !!wallet.manager;
+  const walletIndex = connected ? findWalletIndex(wallet.manager!, p.verifierPubkey) : null;
+  const stake = formatBch(p.stakeSats);
+  const beneName = p.beneficiaryName ?? 'the beneficiary';
+  const stakerAddr = stakerP2pkhAddress(hexToBin(p.stakerPubkey), p.network);
+  const blocked = busy || tooLate || settled;
+
+  async function go(kind: Done['kind'], f: () => Promise<{ txid: string }>) {
     setBusy(true);
-    setMsg('Asking the CommitCash demo verifier…');
+    setMsg(null);
     try {
-      const res = await fetch('/api/verifier', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'keep', pledge: { ...req!.pledge }, confirm: true, note: 'approved via verify link', stakerSig: req!.stakerSig }),
-      });
-      const j = (await res.json()) as { txid?: string; error?: string };
-      if (!res.ok || !j.txid) throw new Error(j.error ?? 'Verifier refused');
-      setTxid(j.txid);
-      setStillLocked(false);
-      setMsg('Approved and sent.');
+      const r = await f();
+      setDone({ txid: r.txid, kind });
     } catch (e) {
       setMsg((e as Error).message);
     } finally {
@@ -92,48 +105,101 @@ export function VerifyPledge() {
     }
   }
 
-  return (
-    <div className="max-w-xl space-y-4 rounded-2xl border border-neutral-800 bg-neutral-900/60 p-6">
-      <h2 className="text-2xl font-semibold">“{req.pledge.promise}”</h2>
-      <ul className="space-y-1 text-sm text-neutral-300">
-        <li>Stake: {req.pledge.stakeSats} sats ({req.pledge.network})</li>
-        <li>If you approve: the stake goes back to your friend.</li>
-        <li>If you rule it broken (or nobody approves in time): it goes to <code className="break-all">{req.pledge.beneficiaryAddress}</code></li>
-        <li>
-          Approve before block {verifyBy} (about 1 hour before the deadline, block {req.pledge.deadline}){height !== null && `; now ${height}`}.
-        </li>
-        {stillLocked === false && !txid && <li className="text-amber-300">This pledge has already been settled.</li>}
-        {tooLate && <li className="text-amber-300">Too late to approve: the deadline is about to pass.</li>}
-      </ul>
+  const demoApprove = () =>
+    go('kept', async () => {
+      const res = await fetch('/api/verifier', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'keep', pledge: { ...p }, confirm: true, note: 'approved via verify link', stakerSig: req.stakerSig }),
+      });
+      const j = (await res.json()) as { txid?: string; error?: string };
+      if (!res.ok || !j.txid) throw new Error(j.error ?? 'The demo verifier refused');
+      return { txid: j.txid };
+    });
 
-      {isDemoVerifier ? (
-        <button disabled={busy || tooLate || stillLocked === false} onClick={demoApprove} className="rounded-full bg-emerald-500 px-5 py-3 font-semibold text-black disabled:opacity-50">
-          Approve with the CommitCash demo verifier
-        </button>
-      ) : wallet.state !== 'connected' ? (
-        <p className="text-sm text-neutral-300">Connect the wallet whose verifier key your friend used (top right). You approve by signing the refund in your wallet.</p>
-      ) : walletIndex === null ? (
-        <p className="text-sm text-red-400">This wallet doesn&apos;t hold the verifier key named in this pledge.</p>
-      ) : (
-        <div className="flex flex-wrap gap-2">
-          <button
-            disabled={busy || tooLate || stillLocked === false}
-            onClick={() => go('Approve', () => approveKeepAsVerifier(wallet.manager!, req, walletIndex))}
-            className="rounded-full bg-emerald-500 px-5 py-3 font-semibold text-black disabled:opacity-50"
-          >
-            They kept it: sign the refund
-          </button>
-          <button
-            disabled={busy || stillLocked === false}
-            onClick={() => go('Rule broken', () => breakAsVerifier(wallet.manager!, req, walletIndex))}
-            className="rounded-full border border-red-500/60 px-5 py-3 text-red-300 disabled:opacity-50"
-          >
-            They broke it
-          </button>
+  const title = done ? (done.kind === 'kept' ? 'Refund signed' : 'Ruled broken') : settled ? 'Already settled' : 'Sign this refund';
+  const lede = done
+    ? done.kind === 'kept' ? 'You signed the refund transaction in your wallet. It has been sent.' : `You signed the payout to ${beneName}. It has been sent.`
+    : settled ? 'The stake has already left this contract, so there’s nothing left to sign.'
+    : 'You’re asked to confirm this habit was kept, then sign the refund transaction in your wallet — not a message.';
+  const [badge, badgeCls] = done ? (done.kind === 'kept' ? ['Signed', ''] : ['Broken', 'badge-bad']) : settled ? ['Closed', 'badge-off'] : tooLate ? ['Window closed', 'badge-off'] : ['Awaiting your signature', 'badge-wait'];
+
+  return (
+    <>
+      <header className="screen-head">
+        <div>
+          <p className="crumbs">Verify</p>
+          <h1>{title}</h1>
+          <p className="lede">{lede}</p>
         </div>
-      )}
-      {msg && <p className="break-all text-sm text-neutral-300">{msg}</p>}
-      {txid && <TxLink txid={txid} />}
-    </div>
+        <span className={`badge ${badgeCls}`}>{badge}</span>
+      </header>
+
+      <div className="layout-2">
+        <Ticket
+          tag="Shared with you to verify"
+          stamp={done ? (done.kind === 'kept' ? 'Signed' : 'Broken') : 'Sign'}
+          stampClass={done ? (done.kind === 'kept' ? 'stamp-kept' : 'stamp-broke') : 'stamp-wait'}
+          habit={p.promise}
+          stake={stake}
+          deadline={deadlineMs ? formatDateTime(deadlineMs) : `Block ${p.deadline}`}
+          verifier="Your friend (staker)"
+          verifierNote={shortAddr(stakerAddr)}
+          beneficiary={p.beneficiaryName ?? 'Beneficiary'}
+          beneficiaryAddr={shortAddr(p.beneficiaryAddress)}
+          keepCopy={`The ${stake} returns to your friend. Their signature is already on this refund.`}
+          breakCopy={`After the deadline, anyone can settle the forfeit to ${beneName}.`}
+        />
+
+        <aside className="sticky-aside">
+          <div className="panel">
+            <h2>{done ? 'Signed' : 'Your signature'}</h2>
+            {done ? (
+              <div className="callout" style={done.kind === 'kept' ? { background: 'var(--keep-tint)', borderColor: '#B7D8CA' } : { background: 'var(--forfeit-tint)', borderColor: '#E4C4B8' }}>
+                <strong>{done.kind === 'kept' ? 'You signed the refund' : 'You ruled it broken'}</strong>
+                <p>{done.kind === 'kept' ? `${stake} is on its way back to your friend.` : `${stake} is on its way to ${beneName}.`}</p>
+              </div>
+            ) : (
+              <>
+                <p className="hint" style={{ marginBottom: 16 }}>
+                  {tooLate
+                    ? 'The verify-by time has passed: a refund now could lose the race to a forfeit.'
+                    : `Get it signed by ${verifyByMs ? formatDateTime(verifyByMs) : `block ${verifyBy}`}. After the deadline, a forfeit can still win the race.`}
+                </p>
+                {settled ? (
+                  <div className="callout"><strong>Nothing to sign</strong><p>This pledge has already been settled.</p></div>
+                ) : isDemoVerifier ? (
+                  <>
+                    <button className="btn btn-keep btn-lg btn-block" type="button" disabled={blocked} onClick={demoApprove}>
+                      {busy ? 'Sending…' : 'Approve with the CommitCash demo verifier'}
+                    </button>
+                    <p className="footnote" style={{ marginTop: 10 }}>This pledge uses the demo verifier, which is run by CommitCash.</p>
+                  </>
+                ) : !connected ? (
+                  <>
+                    <div className="callout">
+                      <strong>Connect your wallet</strong>
+                      <p>Use the wallet whose verifier key your friend used.</p>
+                    </div>
+                    <ConnectWallet size="lg" />
+                  </>
+                ) : walletIndex === null ? (
+                  <div className="callout" style={{ background: 'var(--forfeit-tint)', borderColor: '#E4C4B8' }}>
+                    <strong>Wrong wallet</strong>
+                    <p>This wallet doesn’t hold the verifier key named in this pledge.</p>
+                  </div>
+                ) : (
+                  <button className="btn btn-keep btn-lg btn-block" type="button" disabled={blocked} onClick={() => go('kept', () => approveKeepAsVerifier(wallet.manager!, req, walletIndex))}>
+                    {busy ? 'Waiting for wallet…' : 'Sign the refund in your wallet'}
+                  </button>
+                )}
+              </>
+            )}
+            {msg && <p className="error-text">{msg}</p>}
+            {done && <TxLink txid={done.txid} label={done.kind === 'kept' ? 'Refund tx' : 'Payout tx'} />}
+          </div>
+        </aside>
+      </div>
+    </>
   );
 }
