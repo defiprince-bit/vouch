@@ -105,7 +105,50 @@
 .vl-cta { display: flex; flex-wrap: wrap; gap: 12px; }
 .vl-hero-ticket { position: relative; }
 .vl-hero-ticket .ticket { transform: rotate(1.2deg); box-shadow: 0 30px 60px rgba(20, 33, 28, 0.14), 0 2px 0 rgba(20, 33, 28, 0.06); }
-.vl-hero-ticket .ticket-kicker, .vl-hero-ticket .field-label, .vl-hero-ticket .example-tag, .vl-hero-ticket .outcome b { font-size: 13px; }
+
+/* Float + hero hover: the ticket bobs gently; on fine pointers it tilts toward the
+   cursor, the seal and stamp lift, and the CTA rises. Layers are split so the
+   entrance animation, the float and the tilt don't fight over one transform.
+   html.vl-still (?static=1, ?shot=1, reduced motion) keeps the final static frame. */
+.vl-hero { perspective: 1200px; }
+.vl-ticket-float, .vl-ticket-tilt { transform-origin: 50% 58%; }
+.vl-ticket-tilt { transform-style: preserve-3d; }
+.vl-hero-ticket .ticket { transition: box-shadow 0.4s ease; }
+.vl-ticket-float { --float-y: 9px; --float-r: 0.7deg; }
+@media (max-width: 900px) {
+  .vl-ticket-float { --float-y: 6px; --float-r: 0.35deg; }
+}
+@keyframes vl-float {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(-0.35deg); }
+  50% { transform: translate3d(0, calc(var(--float-y) * -1), 0) rotate(var(--float-r)); }
+}
+.vl-anim .is-in .vl-ticket-float {
+  animation: vl-float 6.4s ease-in-out 0.9s infinite;
+}
+.vl-seal-ticket { transition: transform 0.4s ease, filter 0.4s ease; }
+.vl-hero-ticket .stamp { transition: transform 0.35s ease; }
+@media (pointer: fine) {
+  .vl-anim .vl-ticket-tilt {
+    transform: rotateX(var(--vl-rx, 0deg)) rotateY(var(--vl-ry, 0deg));
+    transition: transform 0.55s cubic-bezier(.2, .8, .2, 1);
+  }
+  .vl-anim .vl-hero.is-hovering .vl-ticket-tilt { transition-duration: 0.18s; }
+  .vl-anim .vl-hero.is-hovering .vl-hero-ticket .ticket {
+    box-shadow: 0 38px 72px rgba(20, 33, 28, 0.2), 0 10px 20px rgba(20, 33, 28, 0.08), 0 2px 0 rgba(20, 33, 28, 0.06);
+  }
+  .vl-anim .vl-hero.is-hovering .vl-seal-ticket {
+    transform: rotate(-14deg) translate3d(0, -5px, 22px) scale(1.04);
+    filter: drop-shadow(0 10px 12px rgba(10, 60, 45, 0.28));
+  }
+  .vl-anim .vl-hero.is-hovering .vl-hero-ticket .stamp {
+    transform: rotate(-18deg) translateY(-3px) scale(1.05);
+  }
+  .vl-cta .btn { transition: transform 0.22s ease, background 0.18s ease, color 0.18s ease, opacity 0.18s ease; }
+  .vl-cta .btn:hover { transform: translateY(-2px); }
+  .vl-cta .btn:active { transform: translateY(1px); }
+}
+.vl-still .vl-ticket-float, .vl-still .vl-ticket-tilt { animation: none !important; transform: none !important; }
+.vl-hero-ticket .ticket-kicker, .vl-hero-ticket .field-label, .vl-hero-ticket .example-tag, .vl-hero-ticket .outcome b, .vl-hero-ticket .addr { font-size: 14px; }
 .vl-seal-ticket { position: absolute; width: 104px; height: 104px; left: -40px; top: -38px; transform: rotate(-14deg); }
 .vl-scroll-cue {
   position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%);
@@ -365,7 +408,7 @@
 .vl-anim .vl-meadow.is-in .vl-foot-mark, .vl-anim .vl-meadow.is-in .vl-foot .wordmark, .vl-anim .vl-meadow.is-in .vl-foot-brand p, .vl-anim .vl-meadow.is-in .vl-foot-links a, .vl-anim .vl-meadow.is-in .vl-foot-base { opacity: 1; transform: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .vl-anim .vl-r, .vl-anim .vl-seal, .vl-anim .vl-w > span, .vl-anim .vl-accent, .vl-anim .vl-cover { opacity: 1 !important; transform: none !important; }
+  .vl-anim .vl-r, .vl-anim .vl-seal, .vl-anim .vl-w > span, .vl-anim .vl-accent, .vl-anim .vl-cover, .vl-anim .vl-ticket-float, .vl-anim .vl-ticket-tilt { opacity: 1 !important; transform: none !important; animation: none !important; }
 }
 
 /* ——— Responsive ——— */

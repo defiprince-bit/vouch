@@ -75,6 +75,8 @@ export default function Landing() {
             </div>
 
             <div className="vl-hero-ticket vl-r" style={d('.2s')}>
+              <div className="vl-ticket-float">
+                <div className="vl-ticket-tilt">
               <article className="ticket" aria-label="Example pledge ticket">
                 <div className="ticket-stub">
                   <svg className="brand-mark" width="24" height="24" aria-hidden="true"><use href="#vmark"/></svg>
@@ -102,6 +104,8 @@ export default function Landing() {
                 </div>
               </article>
               <svg className="vl-seal vl-seal-ticket" viewBox="0 0 120 120" aria-hidden="true"><use href="#vseal"/></svg>
+                </div>
+              </div>
             </div>
           </div>
           <a className="vl-scroll-cue" href="#promise"><span>Read the story</span><i aria-hidden="true"></i></a>

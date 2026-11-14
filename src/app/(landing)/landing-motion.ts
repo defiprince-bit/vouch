@@ -84,6 +84,37 @@ function paintMist() {
   return cnv;
 }
 
+
+function setupHeroTilt(root: HTMLElement, STILL: boolean): () => void {
+  const hero = root.querySelector<HTMLElement>('.vl-hero');
+  const tilt = hero?.querySelector<HTMLElement>('.vl-ticket-tilt');
+  if (!hero || !tilt || STILL) return () => {};
+  if (!window.matchMedia('(pointer: fine)').matches) return () => {};
+  const max = 6;
+  const onMove = (e: PointerEvent) => {
+    const r = hero.getBoundingClientRect();
+    const px = ((e.clientX - r.left) / r.width) * 2 - 1;
+    const py = ((e.clientY - r.top) / r.height) * 2 - 1;
+    tilt.style.setProperty('--vl-ry', `${(px * max).toFixed(2)}deg`);
+    tilt.style.setProperty('--vl-rx', `${(-py * max).toFixed(2)}deg`);
+    hero.classList.add('is-hovering');
+  };
+  const onLeave = () => {
+    tilt.style.setProperty('--vl-ry', '0deg');
+    tilt.style.setProperty('--vl-rx', '0deg');
+    hero.classList.remove('is-hovering');
+  };
+  hero.addEventListener('pointermove', onMove);
+  hero.addEventListener('pointerleave', onLeave);
+  return () => {
+    hero.removeEventListener('pointermove', onMove);
+    hero.removeEventListener('pointerleave', onLeave);
+    hero.classList.remove('is-hovering');
+    tilt.style.removeProperty('--vl-rx');
+    tilt.style.removeProperty('--vl-ry');
+  };
+}
+
 export function startLanding(root: HTMLElement, STILL: boolean): () => void {
   const cleanups: Array<() => void> = [];
   let disposed = false;
@@ -103,6 +134,8 @@ export function startLanding(root: HTMLElement, STILL: boolean): () => void {
     docs.forEach((d) => io.observe(d));
     cleanups.push(() => io.disconnect());
   }
+
+  cleanups.push(setupHeroTilt(root, STILL));
 
   const stop = () => { disposed = true; cleanups.forEach((f) => f()); };
 
