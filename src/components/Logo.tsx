@@ -8,9 +8,7 @@ export function Logo({ variant = 'ink' }: { variant?: 'ink' | 'dark' }) {
     <Link className="brand" href="/" aria-label="Vouch home">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img className="brand-mark" src={variant === 'dark' ? '/brand/mark-on-dark.svg' : '/brand/mark-ink.svg'} width={32} height={32} alt="" />
-      <span className="wordmark">
-        Vouch
-      </span>
+      <span className="wordmark">Vouch<span>.</span></span>
     </Link>
   );
 }
