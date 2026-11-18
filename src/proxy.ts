@@ -9,9 +9,11 @@ export function proxy(req: NextRequest) {
   const group = path.startsWith('/api/chain') ? 'chain' : path.split('/').slice(0, 3).join('/');
   const r = limiter.hit(`${clientIp(req.headers)}|${group}`, limitFor(path));
   if (!r.ok) {
-    return NextResponse.json({ error: 'Too many requests. Wait a minute and try again.' }, { status: 429, headers: { 'retry-after': String(r.retryAfter) } });
+    return NextResponse.json({ error: 'Too many requests. Wait a minute and try again.' }, { status: 429, headers: { 'retry-after': String(r.retryAfter), 'x-ratelimit-remaining': '0' } });
   }
-  return NextResponse.next();
+  const res = NextResponse.next();
+  res.headers.set('x-ratelimit-remaining', String(r.remaining));
+  return res;
 }
 
 export const config = { matcher: '/api/:path*' };
