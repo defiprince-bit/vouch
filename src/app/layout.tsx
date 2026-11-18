@@ -10,7 +10,10 @@ const dmMono = DM_Mono({ subsets: ['latin'], variable: '--font-dm-mono', weight:
 
 // Landing (/) only: pick the motion mode before first paint so revealed sections don't flash.
 // ?static=1, ?shot=1 or reduced motion render the final frame (vl-still); otherwise vl-anim.
-const LANDING_MOTION_SCRIPT = `(function(){try{if(location.pathname!=='/')return;var q=new URLSearchParams(location.search);var s=q.has('static')||q.has('shot')||matchMedia('(prefers-reduced-motion: reduce)').matches;document.documentElement.classList.add(s?'vl-still':'vl-anim');}catch(e){}})();`;
+// The hidden "before" states only apply under vl-anim. If the meadow chunk is late, a
+// 1.2s fallback adds vl-revealed so nothing stays at opacity 0. LandingRoot cancels
+// that timer by setting vl-motion-ready.
+const LANDING_MOTION_SCRIPT = `(function(){try{if(location.pathname!=='/')return;var h=document.documentElement;var q=new URLSearchParams(location.search);var s=q.has('static')||q.has('shot')||matchMedia('(prefers-reduced-motion: reduce)').matches;h.classList.add(s?'vl-still':'vl-anim');if(!s)setTimeout(function(){if(!h.classList.contains('vl-motion-ready'))h.classList.add('vl-revealed');},1200);}catch(e){}})();`;
 
 export const metadata: Metadata = {
   title: 'Vouch: stake BCH on a habit',

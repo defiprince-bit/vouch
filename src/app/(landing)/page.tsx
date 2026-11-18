@@ -15,6 +15,7 @@ const newsreader = Newsreader({
   style: ['normal', 'italic'],
   axes: ['opsz'],
   variable: '--font-newsreader',
+  display: 'swap',
 });
 
 export const metadata: Metadata = {
@@ -61,7 +62,7 @@ export default function Landing() {
 
       <main id="story">
         {/* 1 · Hero */}
-        <section className="vl-hero vl-doc" aria-labelledby="h-hero">
+        <section className="vl-hero vl-doc is-in" aria-labelledby="h-hero">
           <div className="wrap vl-hero-grid">
             <div className="vl-hero-copy">
               <p className="vl-eyebrow vl-r">Bitcoin Cash · <NetworkName /></p>

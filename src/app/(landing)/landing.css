@@ -1,7 +1,10 @@
 /* Vouch landing — scroll story. Ported from design/mocks/landing.css (v2). Scoped to .is-landing (the page wrapper); every rule is .vl- prefixed
    or sits under .is-landing. Motion is opacity + transform only (the meadow is a canvas).
-   Hidden "before" states live under html.vl-anim, so no-JS, reduced motion and
-   ?static=1 / ?shot=1 all render the final frame. */
+   The default (no class) is the final, visible frame, so SSR and no-JS never start hidden.
+   Hidden "before" states live only under html.vl-anim, which an inline script adds before
+   first paint when motion is allowed. The hero section is stamped is-in in the markup so
+   its LCP text is visible at first paint. html.vl-revealed is a 1.2s fallback if motion JS
+   is late. ?static=1 / ?shot=1 / reduced motion use html.vl-still (final frame, no motion). */
 
 .is-landing {
   --serif: var(--font-newsreader), "Newsreader", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
@@ -409,6 +412,27 @@
 
 @media (prefers-reduced-motion: reduce) {
   .vl-anim .vl-r, .vl-anim .vl-seal, .vl-anim .vl-w > span, .vl-anim .vl-accent, .vl-anim .vl-cover, .vl-anim .vl-ticket-float, .vl-anim .vl-ticket-tilt { opacity: 1 !important; transform: none !important; animation: none !important; }
+}
+
+/* Hard fallback: the inline script adds this if LandingRoot has not marked motion ready
+   within 1.2s, so a slow or failed JS chunk can never leave the story at opacity 0. */
+html.vl-revealed .vl-r,
+html.vl-revealed .vl-seal,
+html.vl-revealed .vl-w > span,
+html.vl-revealed .vl-accent,
+html.vl-revealed .vl-cover,
+html.vl-revealed .vl-close-sub,
+html.vl-revealed .vl-pill,
+html.vl-revealed .vl-foot-mark,
+html.vl-revealed .vl-foot .wordmark,
+html.vl-revealed .vl-foot-brand p,
+html.vl-revealed .vl-foot-links a,
+html.vl-revealed .vl-foot-base,
+html.vl-revealed .vl-end-stamp,
+html.vl-revealed .vl-rule i {
+  opacity: 1 !important;
+  transform: none !important;
+  animation: none !important;
 }
 
 /* ——— Responsive ——— */

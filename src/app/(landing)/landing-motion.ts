@@ -123,18 +123,7 @@ export function startLanding(root: HTMLElement, STILL: boolean): () => void {
   root.querySelectorAll<HTMLElement>('.vl-close-h .vl-w > span').forEach((s, i) => s.style.setProperty('--i', String(i < 3 ? i : i + 2)));
   root.querySelectorAll<HTMLElement>('.vl-foot-links a, .vl-foot-base, .vl-foot-brand p').forEach((s, i) => s.style.setProperty('--i', String(i)));
 
-  // ——— Section reveals: each one lands like a stamped page ———
-  const docs = root.querySelectorAll('.vl-doc');
-  if (STILL || !('IntersectionObserver' in window)) {
-    docs.forEach((d) => d.classList.add('is-in'));
-  } else {
-    const io = new IntersectionObserver((es) => {
-      es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('is-in'); io.unobserve(e.target); } });
-    }, { threshold: 0.18, rootMargin: '0px 0px -8% 0px' });
-    docs.forEach((d) => io.observe(d));
-    cleanups.push(() => io.disconnect());
-  }
-
+  // Section reveals live in landing-reveal.ts so they can run before this chunk loads.
   cleanups.push(setupHeroTilt(root, STILL));
 
   const stop = () => { disposed = true; cleanups.forEach((f) => f()); };
