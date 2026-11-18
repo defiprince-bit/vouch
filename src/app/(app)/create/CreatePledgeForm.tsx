@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { hexToBin } from '@bitauth/libauth';
 import { createPledgeContract, getProvider, newPledgeId, validatePledge, verifyByHeight, MIN_STAKE, DEFAULT_MAX_FEE } from '@/lib/vouch';
@@ -11,7 +11,7 @@ import { Ticket } from '@/components/Ticket';
 import { ConnectWallet } from '@/components/ConnectWallet';
 import { useWallet } from '@/components/WalletProvider';
 import { useDemoVerifier } from '@/lib/useDemoVerifier';
-import { lockFromWallet } from '@/lib/walletActions';
+import { lockFromWallet, walletBalance } from '@/lib/walletActions';
 import { useNow } from '@/lib/useNow';
 
 type Step = 'details' | 'review' | 'done';
@@ -38,6 +38,20 @@ export function CreatePledgeForm() {
   const [busy, setBusy] = useState(false);
   const [lockMsg, setLockMsg] = useState<string | null>(null);
   const [lockTxid, setLockTxid] = useState<string | null>(null);
+
+  const [walletSats, setWalletSats] = useState<bigint | null>(null);
+  const connected = wallet.state === 'connected' && !!wallet.manager;
+  const balance = connected ? walletSats : null;
+  useEffect(() => {
+    if (wallet.state !== 'connected' || !wallet.manager) return;
+    let live = true;
+    walletBalance(wallet.manager, NETWORK)
+      .then((b) => live && setWalletSats(b))
+      .catch(() => live && setWalletSats(null));
+    return () => {
+      live = false;
+    };
+  }, [wallet.state, wallet.manager, step]);
 
   const sats = bchToSats(amount);
   const minFail = sats !== null && sats < MIN_STAKE;
@@ -188,6 +202,7 @@ export function CreatePledgeForm() {
                   ) : (
                     <p className="hint">
                       {sats ? `${formatSats(sats)}. ` : ''}Minimum {formatSats(MIN_STAKE)}; fees (max {formatSats(DEFAULT_MAX_FEE)}) come out of it.
+                      {balance !== null ? ` Your wallet has ${formatSats(balance)}.` : ''}
                     </p>
                   )}
                 </div>

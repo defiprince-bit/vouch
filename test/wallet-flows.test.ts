@@ -69,8 +69,8 @@ describe('wallet + verifier flows', () => {
     provider.addUtxo(stakerAddress, randomUtxo({ satoshis: 30_000n }));
     provider.addUtxo(stakerAddress, randomUtxo({ satoshis: 5_000n }));
     const walletUtxos = await provider.getUtxos(stakerAddress);
-    const builder = buildLock({ provider, walletUtxos, walletAddress: stakerAddress, contractAddress: contract.address, stake: STAKE });
-    const req = toWcSignRequest(builder, walletUtxos.map((_, i) => [i, 'receive', 0]), { broadcast: true, userPrompt: 'Lock' });
+    const { builder, inputs } = buildLock({ provider, walletUtxos, walletAddress: stakerAddress, contractAddress: contract.address, stake: STAKE });
+    const req = toWcSignRequest(builder, inputs.map((_, i) => [i, 'receive', 0]), { broadcast: true, userPrompt: 'Lock' });
     // relay-safe: JSON round-trips with no bigint / Uint8Array left
     expect(() => JSON.stringify(req)).not.toThrow();
     await provider.sendRawTransaction(mockWalletSign(req, stakerWallet));

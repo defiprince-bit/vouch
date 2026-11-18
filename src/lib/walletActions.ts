@@ -17,6 +17,7 @@ import {
 } from './vouch';
 import { toWcSignRequest, keepSignaturesFromTx, DUMMY_SIGNATURE, STAKER_PATH, type InputPath } from './wc';
 import type { StoredPledge } from './pledges';
+import { gatherWalletUtxos, lockInputPaths, totalSats } from './walletUtxos';
 import type { VerifyRequest } from './share';
 
 export function pledgeContract(p: Pick<StoredPledge, 'stakerPubkey' | 'verifierPubkey' | 'beneficiaryAddress' | 'deadline' | 'id' | 'network'>, provider?: NetworkProvider) {
@@ -74,14 +75,21 @@ async function lockedUtxo(contract: ReturnType<typeof pledgeContract>['contract'
 
 const stakerPath: InputPath = [0, STAKER_PATH.name, STAKER_PATH.index];
 
-/** Lock the stake from the wallet's receive/0 address. */
+/**
+ * Lock the stake using coins from any of the wallet's receive/change addresses (HD wallets spread
+ * funds around). Change goes back to the staker's receive/0 address.
+ */
 export async function lockFromWallet(manager: DappConnectionManager, p: StoredPledge) {
   const { provider, contract } = pledgeContract(p);
   const walletAddress = stakerP2pkhAddress(hexToBin(p.stakerPubkey), p.network);
-  const walletUtxos = await provider.getUtxos(walletAddress);
-  const builder = buildLock({ provider, walletUtxos, walletAddress, contractAddress: contract.address, stake: BigInt(p.stakeSats) });
-  const paths = walletUtxos.filter((u) => !u.token).map((_, i): InputPath => [i, STAKER_PATH.name, STAKER_PATH.index]);
-  return walletSign(manager, provider, builder, paths, { broadcast: true, userPrompt: `Vouch: lock ${p.stakeSats} sats on “${p.promise}”` });
+  const walletUtxos = await gatherWalletUtxos(manager, provider, p.network);
+  const { builder, inputs } = buildLock({ provider, walletUtxos, walletAddress, contractAddress: contract.address, stake: BigInt(p.stakeSats) });
+  return walletSign(manager, provider, builder, lockInputPaths(inputs), { broadcast: true, userPrompt: `Vouch: lock ${p.stakeSats} sats on “${p.promise}”` });
+}
+
+/** Spendable (non-token) balance across the connected wallet's receive and change addresses. */
+export async function walletBalance(manager: DappConnectionManager, network: StoredPledge['network']): Promise<bigint> {
+  return totalSats(await gatherWalletUtxos(manager, getProvider(network), network));
 }
 
 /** Demo verifier flow (verifier first): get the verifier's signature, then the staker signs the refund and it's pushed. */

@@ -10,6 +10,7 @@ import {
 } from 'cashscript';
 import { getProvider as getNetworkProvider, type BchNetwork } from './providers';
 import { keepSignaturesFromTx } from './wc';
+import { selectLockUtxos } from './walletUtxos';
 import {
   cashAddressToLockingBytecode,
   encodeCashAddress,
@@ -161,21 +162,27 @@ export function buildForfeit(o: SpendBase & { beneficiaryAddress: string; deadli
 export const VERIFY_MARGIN_BLOCKS = 6;
 export const verifyByHeight = (deadline: number) => deadline - VERIFY_MARGIN_BLOCKS;
 
-/** Lock: wallet P2PKH UTXOs -> contract. Inputs use placeholder unlockers; the wallet signs them. */
-export function buildLock(o: {
+/**
+ * Lock: wallet P2PKH UTXOs -> contract. Inputs use placeholder unlockers; the wallet signs them.
+ * UTXOs may sit on different wallet addresses (`address`); otherwise `walletAddress` is assumed.
+ * Coins are picked largest-first; returns the builder and the inputs used, in input order.
+ */
+export function buildLock<T extends SpendableUtxo & { address?: string }>(o: {
   provider: NetworkProvider;
-  walletUtxos: SpendableUtxo[];
+  walletUtxos: T[];
   walletAddress: string;
   contractAddress: string;
   stake: bigint;
-}) {
-  const utxos = o.walletUtxos.filter((u) => !u.token);
-  const total = utxos.reduce((s, u) => s + u.satoshis, 0n);
-  if (total < o.stake + 1000n) throw new Error(`Wallet has ${total} sats; need ${o.stake} + fees`);
-  return new TransactionBuilder({ provider: o.provider })
-    .addInputs(utxos, placeholderP2PKHUnlocker(o.walletAddress))
-    .addOutput({ to: o.contractAddress, amount: o.stake })
-    .addBchChangeOutputIfNeeded({ to: o.walletAddress, feeRate: 1.1 });
+}): { builder: TransactionBuilder; inputs: T[] } {
+  const inputs = selectLockUtxos(o.walletUtxos, o.stake);
+  if (!inputs) {
+    const total = o.walletUtxos.filter((u) => !u.token).reduce((s, u) => s + u.satoshis, 0n);
+    throw new Error(`Wallet has ${total} sats; need ${o.stake} + fees`);
+  }
+  const builder = new TransactionBuilder({ provider: o.provider });
+  for (const u of inputs) builder.addInput(u, placeholderP2PKHUnlocker(u.address ?? o.walletAddress));
+  builder.addOutput({ to: o.contractAddress, amount: o.stake }).addBchChangeOutputIfNeeded({ to: o.walletAddress, feeRate: 1.1 });
+  return { builder, inputs };
 }
 
 /**
