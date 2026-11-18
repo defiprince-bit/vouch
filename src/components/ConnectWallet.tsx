@@ -18,10 +18,19 @@ export function ConnectWallet({ size, variant = 'primary' }: { size?: 'lg'; vari
       </button>
     );
   }
+  const cls = `btn ${variant === 'ghost' ? 'btn-ghost' : 'btn-primary'}${size === 'lg' ? ' btn-lg' : ''}`;
+  if (w.resuming) {
+    // A saved session is being resumed with no QR on screen; let the user start over.
+    return (
+      <button type="button" className={cls} onClick={() => void w.restart()} title="Reconnecting to your last wallet. Click to connect fresh.">
+        Reconnecting… tap to connect fresh
+      </button>
+    );
+  }
   return (
     <button
       type="button"
-      className={`btn ${variant === 'ghost' ? 'btn-ghost' : 'btn-primary'}${size === 'lg' ? ' btn-lg' : ''}`}
+      className={cls}
       onClick={() => w.connect()}
       disabled={w.state === 'connecting'}
       title={w.error ?? undefined}
