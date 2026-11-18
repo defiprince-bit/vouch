@@ -18,6 +18,7 @@ import { prepareQuorumRequest, progressOf } from '@/lib/quorumActions';
 import { useDemoVerifier } from '@/lib/useDemoVerifier';
 import { QuorumPanel } from './QuorumPanel';
 import { useNow } from '@/lib/useNow';
+import { listOnWall } from '@/lib/wallActions';
 
 type Chain = { kind: 'loading' } | { kind: 'error'; msg: string } | { kind: 'ok'; sats: bigint; height: number; at: number };
 type Phase = 'loading' | 'offline' | 'unfunded' | 'active' | 'expired' | 'closed';
@@ -127,6 +128,17 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
       ),
     );
   }, [expired, pledge, run]);
+
+  const [wallBusy, setWallBusy] = useState(false);
+  const [wallErr, setWallErr] = useState<string | null>(null);
+  async function listHere() {
+    if (!wallet.manager) return;
+    setWallBusy(true);
+    setWallErr(null);
+    const res = await listOnWall(wallet.manager, pledge);
+    setWallBusy(false);
+    if (!res.ok) setWallErr(`Not listed: ${res.error}`);
+  }
 
   async function askFriend() {
     if (!wallet.manager) return;
@@ -541,6 +553,27 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
               <div className="kv-row">
                 <dt>Network</dt>
                 <dd>{pledge.network === 'mainnet' ? 'Mainnet · real BCH' : 'Chipnet · test coins'}</dd>
+              </div>
+              <div className="kv-row">
+                <dt>Wall</dt>
+                <dd data-testid="pledge-wall">
+                  {pledge.listedAt ? (
+                    <>Listed · <Link href="/wall">See the wall</Link></>
+                  ) : (
+                    <>
+                      Unlisted
+                      {mine && locked > 0n && (
+                        <>
+                          {' · '}
+                          <button className="link-btn" type="button" disabled={wallBusy} onClick={() => void listHere()} data-testid="list-on-wall">
+                            {wallBusy ? 'Listing… approve in your wallet' : 'List on the wall'}
+                          </button>
+                        </>
+                      )}
+                      {wallErr && <span className="field-error" style={{ display: 'block' }} role="alert">{wallErr}</span>}
+                    </>
+                  )}
+                </dd>
               </div>
             </dl>
             {pledge.lockTxid && <TxLink txid={pledge.lockTxid} network={pledge.network} label="Lock tx" />}

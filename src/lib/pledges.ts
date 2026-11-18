@@ -27,6 +27,10 @@ export interface StoredPledge {
   threshold?: number;
   /** v2: signatures collected so far (link relay), all bound to `utxo`. */
   quorum?: QuorumProgress;
+  /** Wall visibility picked on create. Missing = unlisted (pledges made before the wall). */
+  visibility?: 'public' | 'unlisted';
+  /** ms, when /api/wall accepted the listing. */
+  listedAt?: number;
 }
 
 export interface QuorumVerifier {

@@ -206,7 +206,7 @@ export function quorumSigsFromTx(txHex: string, kind: 'keep' | 'break', inputInd
 }
 
 /** The sighash every signer of this spend signs (the tx's unlocking bytecode isn't covered). */
-export function spendSighash(contract: QuorumContract, builder: TransactionBuilder, sighashType = VOUCH_SIGHASH): Uint8Array {
+export function spendSighash(contract: Pick<QuorumContract, 'lockingBytecode' | 'bytecode'>, builder: TransactionBuilder, sighashType = VOUCH_SIGHASH): Uint8Array {
   const tx = decodeTransaction(hexToBin(builder.build()));
   if (typeof tx === 'string') throw new Error(tx);
   const sourceOutputs = [{ lockingBytecode: hexToBin(contract.lockingBytecode), valueSatoshis: builder.inputs[0].satoshis }];

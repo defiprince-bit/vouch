@@ -16,6 +16,8 @@ import { lockFromWallet, walletBalance } from '@/lib/walletActions';
 import { createQuorumContract, quorumPledgeIssues, quorumShapeIssues, quorumPowerCopy } from '@/lib/quorum';
 import { QuorumFields, rowKeyError, type VerifierRow } from './QuorumFields';
 import { useNow } from '@/lib/useNow';
+import { defaultVisibility, VISIBILITY_COPY, type Visibility } from '@/lib/wall';
+import { listOnWall } from '@/lib/wallActions';
 
 type Step = 'details' | 'review' | 'done';
 const MIN_DEADLINE_BLOCKS = 12;
@@ -51,6 +53,9 @@ export function CreatePledgeForm() {
   const [busy, setBusy] = useState(false);
   const [lockMsg, setLockMsg] = useState<string | null>(null);
   const [lockTxid, setLockTxid] = useState<string | null>(null);
+  const [visibilityPicked, setVisibility] = useState<Visibility | null>(null);
+  const visibility = visibilityPicked ?? defaultVisibility(network);
+  const [wallMsg, setWallMsg] = useState<{ kind: 'busy' | 'ok' | 'err'; text: string } | null>(null);
 
   const [walletSats, setWalletSats] = useState<bigint | null>(null);
   const connected = wallet.state === 'connected' && !!wallet.manager;
@@ -161,6 +166,7 @@ export function CreatePledgeForm() {
           contractAddress: contract.address,
           network,
           createdAt: now,
+          visibility,
         });
         setStep('review');
         return;
@@ -191,6 +197,7 @@ export function CreatePledgeForm() {
         contractAddress: contract.address,
         network,
         createdAt: now,
+        visibility,
       });
       setStep('review');
     } catch (err) {
@@ -209,15 +216,34 @@ export function CreatePledgeForm() {
     try {
       if (draft.network !== network) throw new Error(`This draft is for ${draft.network}, but the app is on ${network}. Edit the details to rebuild it.`);
       const { txid } = await lockFromWallet(wallet.manager, draft);
-      savePledge({ ...draft, lastTxid: txid, lockTxid: txid });
+      const locked = { ...draft, lastTxid: txid, lockTxid: txid };
+      savePledge(locked);
+      setDraft(locked);
       setLockTxid(txid);
       setLockMsg(null);
       setStep('done');
+      if (locked.visibility === 'public') void listIt(locked);
     } catch (e) {
       setLockMsg((e as Error).message);
     } finally {
       setBusy(false);
     }
+  }
+
+  /** "List on the wall": one more wallet signature (the staker proof), then POST /api/wall. */
+  async function listIt(p: StoredPledge) {
+    if (!wallet.manager) return setWallMsg({ kind: 'err', text: 'Connect your wallet to list it.' });
+    setWallMsg({ kind: 'busy', text: 'Listing on the wall: approve the signature in your wallet (it proves you’re the staker; nothing is spent)…' });
+    let res = await listOnWall(wallet.manager, p);
+    // The lock can take a few seconds to show up on the indexer.
+    for (let i = 0; i < 3 && !res.ok && /no locked stake|not found|no utxo/i.test(res.error); i++) {
+      await new Promise((r) => setTimeout(r, 4000));
+      res = await listOnWall(wallet.manager, p);
+    }
+    if (res.ok) {
+      setDraft({ ...p, visibility: 'public', listedAt: res.listedAt });
+      setWallMsg({ kind: 'ok', text: 'Listed on the wall.' });
+    } else setWallMsg({ kind: 'err', text: `Not listed: ${res.error}` });
   }
 
   function saveUnfunded() {
@@ -298,6 +324,25 @@ export function CreatePledgeForm() {
                   <p className="hint">Stored as a block height (~10 min a block), so it can drift a little.</p>
                 </div>
               </div>
+              <fieldset className="choice-set" id="visibility-set">
+                <legend>Who can see this</legend>
+                <div className="choice-row">
+                  {(['public', 'unlisted'] as const).map((v) => (
+                    <label key={v} className="choice">
+                      <input type="radio" name="visibility" value={v} checked={visibility === v} onChange={() => setVisibility(v)} data-testid={`visibility-${v}`} />
+                      <span>
+                        <b>{VISIBILITY_COPY[v].label}</b>
+                        <span className="choice-help">{VISIBILITY_COPY[v].help}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <p className="footnote vis-note">
+                  {visibility === 'unlisted'
+                    ? 'Hidden from the wall, still visible on-chain to anyone with the address or txid.'
+                    : `Listed pledges show on the ${network === 'mainnet' ? 'Mainnet' : 'Chipnet'} wall after you lock. The beneficiary isn’t shown there.`}
+                </p>
+              </fieldset>
               <fieldset className="choice-set">
                 <legend>Verifier</legend>
                 <div className="choice-row">
@@ -415,6 +460,7 @@ export function CreatePledgeForm() {
                     </>
                   );
                 })()}{draft.verifierKind === 'demo' && <span className="footnote" style={{ display: 'block' }}>Demo verifier is run by Vouch.</span>}</dd></div>
+                <div className="kv-row"><dt>Visibility</dt><dd data-testid="review-visibility">{VISIBILITY_COPY[draft.visibility ?? 'unlisted'].label}<span className="footnote" style={{ display: 'block' }}>{draft.visibility === 'public' ? 'Listed after the lock confirms, with one more wallet signature.' : 'Hidden from the wall, still on-chain.'}</span></dd></div>
                 <div className="kv-row"><dt>Contract</dt><dd className="addr"><a href={explorerAddr(draft.network, draft.contractAddress)} target="_blank" rel="noreferrer">{draft.contractAddress}</a></dd></div>
               </dl>
               {lockMsg && <p className="callout" style={{ marginTop: 12 }}>{lockMsg}</p>}
@@ -449,9 +495,18 @@ export function CreatePledgeForm() {
                   ? `When you’ve kept it, open the pledge and tap Keep: it makes a signing link for ${verifierLabel}. They sign the refund in their wallet.`
                   : 'When you’ve kept it, open the pledge and tap Keep before the verify-by time. The demo verifier signs the refund.'}
               </p>
+              {lockTxid && (
+                <div className="wall-list-row" data-testid="wall-list-row">
+                  {wallMsg && <p className={wallMsg.kind === 'err' ? 'field-error' : 'callout'} role="status" style={{ margin: '0 0 10px' }}>{wallMsg.text}{wallMsg.kind === 'ok' && <> <Link href="/wall">See the wall</Link></>}</p>}
+                  {!draft.listedAt && wallMsg?.kind !== 'busy' && (
+                    <button className="btn btn-ghost" type="button" onClick={() => void listIt(draft)} data-testid="list-on-wall">List on the wall</button>
+                  )}
+                  {!draft.listedAt && !wallMsg && <p className="footnote" style={{ marginTop: 6 }}>Unlisted. Listing shows the habit, stake, deadline and outcome; the beneficiary stays off the wall.</p>}
+                </div>
+              )}
               <div className="form-actions">
                 <Link className="btn btn-primary btn-lg" href={`/pledges/${draft.id}`}>View the pledge</Link>
-                <button className="btn btn-ghost" type="button" onClick={() => { setDraft(null); setLockTxid(null); setHabit(''); setStep('details'); }}>Make another</button>
+                <button className="btn btn-ghost" type="button" onClick={() => { setDraft(null); setLockTxid(null); setWallMsg(null); setHabit(''); setStep('details'); }}>Make another</button>
               </div>
             </div>
           </section>

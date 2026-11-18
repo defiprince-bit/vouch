@@ -50,7 +50,7 @@ export function verifierPubkeyHex(key: SignatureTemplate): string {
   return binToHex(key.publicKey);
 }
 
-function parseTerms(t: unknown): PledgeTerms {
+export function parseTerms(t: unknown): PledgeTerms {
   const p = t as Partial<PledgeTerms>;
   const hex33 = /^[0-9a-f]{66}$/i;
   if (!p || typeof p !== 'object') throw new VerifierError('Missing pledge');

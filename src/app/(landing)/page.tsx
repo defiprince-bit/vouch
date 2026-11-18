@@ -6,6 +6,7 @@ import { ConnectWallet } from '@/components/ConnectWallet';
 import { NetworkBadge, NetworkName } from '@/components/NetworkBadge';
 import { REPO_URL } from '@/lib/config';
 import { LandingRoot } from './LandingRoot';
+import { LandingStats } from './LandingStats';
 import './landing.css';
 
 // Vouch landing v2 (design/mocks/landing.html). Every landing rule is .vl- prefixed or scoped
@@ -54,6 +55,7 @@ export default function Landing() {
           </Link>
           <div className="nav-actions">
             <NetworkBadge />
+            <Link className="btn btn-ghost nav-link" href="/wall">Wall</Link>
             <ConnectWallet variant="ghost" />
             <Link className="btn btn-primary" href="/create">Open app</Link>
           </div>
@@ -222,6 +224,9 @@ export default function Landing() {
             <p className="vl-foot-note vl-center vl-r" style={d('.3s')}>After the deadline a refund and a forfeit can race, so get it verified at least an hour before.</p>
           </div>
         </section>
+
+        {/* Figures from the wall: real, chain-derived numbers only (no sample data) */}
+        <LandingStats />
       </main>
 
       {/* 6 · Meadow close + footer */}
@@ -251,6 +256,7 @@ export default function Landing() {
             </div>
             <nav className="vl-foot-links" aria-label="Footer">
               <a href="#promise">How it works</a>
+              <Link href="/wall">Wall</Link>
               <Link href="/pledges">Pledges</Link>
               <Link href="/verify">Verify</Link>
               {/* Hidden until the public repo URL is set (NEXT_PUBLIC_REPO_URL). */}

@@ -1,7 +1,7 @@
-import Link from 'next/link';
 import { ConnectWallet } from './ConnectWallet';
 import { Logo } from './Logo';
 import { NetworkBadge } from './NetworkBadge';
+import { NavLink } from './NavLink';
 
 export function Header() {
   return (
@@ -10,8 +10,9 @@ export function Header() {
         <Logo />
         <div className="nav-actions">
           <NetworkBadge />
-          <Link className="btn btn-ghost nav-link" href="/pledges">My pledges</Link>
-          <Link className="btn btn-ghost nav-link" href="/create">New pledge</Link>
+          <NavLink href="/wall">Wall</NavLink>
+          <NavLink href="/pledges">My pledges</NavLink>
+          <NavLink href="/create">New pledge</NavLink>
           <ConnectWallet />
         </div>
       </div>

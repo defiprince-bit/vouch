@@ -9,6 +9,16 @@ import { cashAddressToLockingBytecode, binToHex, encodeCashAddress, CashAddressT
 export type BchNetwork = 'chipnet' | 'mainnet';
 export type ProviderMode = 'auto' | 'electrum' | 'rest';
 
+export interface AddressHistoryTx {
+  hash: string;
+  inputs: Array<{ address: string; value: number }>;
+  outputs: Array<{ address: string; value: number }>;
+  /** 0 or missing while unconfirmed. */
+  blockHeight?: number;
+  /** Block time, unix seconds. */
+  timestamp?: number;
+}
+
 const MAINNET_CASH = 'https://rest-unstable.mainnet.cash';
 const mcNet = (n: BchNetwork) => (n === 'mainnet' ? 'mainnet' : 'testnet'); // mainnet.cash "testnet" = chipnet
 
@@ -79,6 +89,11 @@ export const restUpstream = {
       }
     }
     throw new Error(`could not read ${network} height (${errors.join('; ')})`);
+  },
+  /** Address history (mainnet.cash watch wallet): every tx touching the address, with input/output addresses. */
+  async history(network: BchNetwork, address: string): Promise<AddressHistoryTx[]> {
+    const rows = await mcPost<AddressHistoryTx[]>('/wallet/get_history', { walletId: `watch:${mcNet(network)}:${address}` });
+    return Array.isArray(rows) ? rows : [];
   },
   async rawTx(network: BchNetwork, txid: string): Promise<string> {
     const r = await mcPost<{ txHex: string }>('/wallet/util/get_raw_transaction', { txHash: txid, network: mcNet(network) });

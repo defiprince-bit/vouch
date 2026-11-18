@@ -122,9 +122,21 @@ The browser uses Electrum over wss by default. If that fails to connect, it fall
 
 ## Pages
 
-`/` landing · `/create` new pledge · `/pledges` your pledges (this browser) · `/pledges/<id>` one pledge's status (countdown, Your move, Settle) · `/verify#pledge=…` a friend signs the refund (pledge data stays in the URL fragment, never sent to the server; a `?pledge=` link is accepted and moved into the fragment) · `/verifier-key` get a key to be someone's verifier.
+`/` landing · `/create` new pledge · `/pledges` your pledges (this browser) · `/pledges/<id>` one pledge's status (countdown, Your move, Settle) · `/verify#pledge=…` a friend signs the refund (pledge data stays in the URL fragment, never sent to the server; a `?pledge=` link is accepted and moved into the fragment) · `/verifier-key` get a key to be someone's verifier · `/wall` listed pledges per network, with figures.
 
 UI follows the design pack in `bchblaze/design/mocks`; `node scripts/sync-design-css.mjs <path/to/styles.css>` re-syncs its stylesheet into `src/app/design.css` (app tweaks live in `src/app/app.css`). Brand files are in `public/brand/`; swap the logo in `src/components/Logo.tsx`.
+
+## The wall (`/wall`)
+
+A pledge is **Listed on the wall** or **Unlisted** (field `visibility`: `public | unlisted`; chipnet defaults to listed, mainnet to unlisted). Unlisted pledges stay off the wall, but the coins, amount and payout are still visible on-chain to anyone with the address.
+
+- **Listing is staker-proof.** After the lock (or with "List on the wall" on the done screen or the pledge page) the browser sends `POST /api/wall {link, habit}`, where `link` is the same signed request a verify link carries (the staker's pre-signature over the keep tx of the locked UTXO). The server rebuilds the contract from the terms, requires the address to match and the network to match, requires the UTXO to be on chain, and checks the staker's signature. The signature isn't stored.
+- **Registry.** Turso database `vouch-wall`, table `listings` (terms, network, habit, staker key, contract address, version, created time, last derived state + `checked_at`). Only listed pledges are stored. `pledge_id` is the primary key and `contract_address` is unique.
+- **Everything shown is derived from the chain**: active = the contract UTXO is unspent; kept = the spend paid the staker; paid = the spend paid the beneficiary (ruled broken, or forfeited after the deadline). Figures per network: vouches made, BCH locked (active only), kept and paid counts. Cards never show the beneficiary; the staker is a shortened address. Final states are stored and not re-read; active ones are re-read after 60 s. `GET /api/wall?network=` is edge-cached (`s-maxage=45, stale-while-revalidate=300`).
+- **Spam guards.** Habit 1–140 characters (control/bidi characters removed; rendered escaped). At most 5 active listings per staker key. Listing attempts are rate-limited in Turso (`list_attempts`): 10 per hour per hashed IP, 8 per hour per staker key.
+- **Pulling a listing** without a redeploy: in the Turso shell (`turso db shell vouch-wall`) run `UPDATE listings SET hidden = 1 WHERE pledge_id = '<pledge id hex>';` (set back to `0` to restore). Hidden rows are left out of the wall and the figures within a minute or so (the edge cache).
+- **Seed.** The chipnet wall is seeded with the 10 README test pledges (tagged "test run"); their terms were rebuilt from their spend transactions by `scripts/recover-legacy.mts`. Without the Turso variables the app serves just these seeds and `POST /api/wall` answers 503.
+- **Empty mainnet.** If nothing is listed on mainnet, the wall shows chipnet with a note.
 
 ## Environment variables
 
@@ -136,6 +148,8 @@ See [`.env.example`](.env.example). For a deployment:
 | `NEXT_PUBLIC_BCH_PROVIDER` | public | `auto` (default), `electrum`, `rest` |
 | `NEXT_PUBLIC_SLIDES_URL`, `NEXT_PUBLIC_REPO_URL`, `NEXT_PUBLIC_EMBER_ADDRESS` | public | banner links |
 | `DEMO_VERIFIER_MAINNET` | **server-only** | `1` lets the demo verifier sign mainnet pledges. Unset (default): it's chipnet-only, `/api/verifier` answers 403 for mainnet and the create form requires a friend or group there. |
+| `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | **server-only** | the wall registry (`libsql://vouch-wall-….turso.io` and a database token). Unset = the wall shows only the chipnet seeds and listing is off. Never `NEXT_PUBLIC_`. |
+| `WALL_IP_SALT` | **server-only** | optional salt for the hashed IPs in `list_attempts`. |
 | `COMMITCASH_VERIFIER_WIF` | **server-only** | the app-operated demo verifier key (co-signs keep only). Never `NEXT_PUBLIC_`. Unset = demo verifier off. *Legacy name from before the rename to Vouch; kept as is because it's already set on Vercel.* |
 
 ## Known limits
