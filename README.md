@@ -57,6 +57,7 @@ Recorded quorum runs on chipnet (19 Nov 2026):
 | 2-of-3 keep, staker pre-signs, verifier 3 then verifier 1 sign separately | [d33425c0…71de](https://chipnet.imaginary.cash/tx/d33425c071c52ba3ef38066d55bdf3f04ab9a9c6a4a9be9114fc201afdaf71de) | [9b716c9b…8448](https://chipnet.imaginary.cash/tx/9b716c9b685943f30fbf7cf387b8058428ad3514c4c179af0cf0849306b78448) → staker |
 | 2-of-3 breakByVerifier (verifiers 2 + 3) | [3101159c…9e62](https://chipnet.imaginary.cash/tx/3101159c5785fa7f8a470323031d30496605ca85cfd08ebc8ba73cd3cf009e62) | [6076d727…87ea](https://chipnet.imaginary.cash/tx/6076d72769203fcb178ca50fcb1cbf3b30b35ef07f5795190e24fd40ad7887ea) → beneficiary |
 | 2-of-3 keep through the app: `/api/verifier` (demo slot) + a wallet-signed slot via the link | [bff62eeb…27a0](https://chipnet.imaginary.cash/tx/bff62eeb89f5c839ce22bbb69bd5e8212563b131a3e4f335fb7eaa96463527a0) | [cc183853…d31e](https://chipnet.imaginary.cash/tx/cc183853d9c6f4965267b5ec222f6520c025c3ad0e8645aa86faf61a245ad31e) → staker |
+| Same, re-run after the WizardConnect hex-payload fix (sign requests carry the tx as hex) | [3ae2d542…f7ed](https://chipnet.imaginary.cash/tx/3ae2d5424ddeeaa169c5287d24cb0d85c4233dda65e652fbc685390cf106f7ed) | [28db3837…f59a](https://chipnet.imaginary.cash/tx/28db38379d3e98bae7ee50b410dbee5f115f0b58d8e5c47d720449f0ee23f59a) → staker |
 
 ## Develop
 
