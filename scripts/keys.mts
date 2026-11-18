@@ -4,7 +4,7 @@ import { generatePrivateKey, encodePrivateKeyWif } from '@bitauth/libauth';
 
 const file = '.env.local';
 const current = existsSync(file) ? readFileSync(file, 'utf8') : '';
-const names = ['CHIPNET_STAKER_WIF', 'CHIPNET_VERIFIER_WIF', 'CHIPNET_BENEFICIARY_WIF'];
+const names = ['CHIPNET_STAKER_WIF', 'CHIPNET_VERIFIER_WIF', 'CHIPNET_BENEFICIARY_WIF', 'CHIPNET_VERIFIER2_WIF', 'CHIPNET_VERIFIER3_WIF'];
 let added = 0;
 for (const name of names) {
   if (current.includes(`${name}=`)) continue;
