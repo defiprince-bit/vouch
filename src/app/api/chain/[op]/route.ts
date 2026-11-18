@@ -1,7 +1,7 @@
 // HTTPS chain proxy for the REST fallback provider (browser -> here -> mainnet.cash / explorers).
 import { NextResponse, type NextRequest } from 'next/server';
 import { restUpstream } from '@/lib/providers';
-import { jsonError, networkParam } from '@/server/http';
+import { addressParam, jsonError, networkParam } from '@/server/http';
 import { VerifierError } from '@/server/verifier';
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ op: string }> }) {
@@ -11,7 +11,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ op: string 
     const network = networkParam(q.get('network'));
     if (op === 'height') return NextResponse.json({ height: await restUpstream.height(network) });
     if (op === 'utxos') {
-      const address = q.get('address') ?? '';
+      const address = addressParam(q.get('address'), network);
       const utxos = await restUpstream.utxos(network, address);
       return NextResponse.json({ utxos: utxos.map((u) => ({ txid: u.txid, vout: u.vout, satoshis: u.satoshis.toString(), lockingBytecode: u.lockingBytecode })) });
     }

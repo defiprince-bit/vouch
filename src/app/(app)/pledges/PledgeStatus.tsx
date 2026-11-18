@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { hexToBin } from '@bitauth/libauth';
 import { savePledge, type StoredPledge } from '@/lib/pledges';
 import { shouldAutoForfeit, stakerP2pkhAddress, verifyByHeight } from '@/lib/vouch';
-import { EXPLORER_ADDR, EXPLORER_TX } from '@/lib/config';
+import { explorerAddr, explorerTx, networkLabel, storeNetwork } from '@/lib/network';
+import { useNetwork } from '@/lib/useNetwork';
 import { formatBch, formatCountdown, formatDateTime, shortAddr, BLOCK_SECONDS } from '@/lib/format';
 import { TxLink } from '@/components/TxLink';
 import { Ticket } from '@/components/Ticket';
@@ -20,6 +21,8 @@ const txid = (r: { txid: string } | string) => (typeof r === 'string' ? r : r.tx
 
 export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
   const wallet = useWallet();
+  const network = useNetwork();
+  const netOk = pledge.network === network;
   const [chain, setChain] = useState<Chain>({ kind: 'loading' });
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -79,7 +82,7 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
   const verifyByMs = deadlineMs - (pledge.deadline - verifyBy) * BLOCK_SECONDS * 1000;
   const tooLateToVerify = height !== null && height >= verifyBy;
   const connected = wallet.state === 'connected' && !!wallet.manager;
-  const mine = connected && wallet.stakerPubkeyHex === pledge.stakerPubkey;
+  const mine = netOk && connected && wallet.stakerPubkeyHex === pledge.stakerPubkey;
 
   const record = useCallback(
     (id: string, patch: Partial<StoredPledge>) => {
@@ -183,7 +186,7 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
             ? `The deadline passed and the forfeit was settled. The stake was paid to ${beneName}.`
             : 'The stake has left the contract. Check the explorer for where it went.';
 
-  const latestHref = pledge.lastTxid ? EXPLORER_TX + pledge.lastTxid : EXPLORER_ADDR + pledge.contractAddress;
+  const latestHref = pledge.lastTxid ? explorerTx(pledge.network, pledge.lastTxid) : explorerAddr(pledge.network, pledge.contractAddress);
   const stake = formatBch(pledge.stakeSats);
 
   return (
@@ -242,7 +245,19 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
               </div>
             )}
 
-            {(phase === 'active' || phase === 'unfunded') && !connected && (
+            {!netOk && (
+              <div className="callout callout-warn" role="note" data-testid="network-mismatch">
+                <strong>This pledge is on {pledge.network}</strong>
+                <p>
+                  The app is on {network}. The status below is read from {pledge.network}, but to sign for this pledge, switch the app
+                  {wallet.state === 'connected' ? ' (your wallet will disconnect)' : ''} and connect a wallet on {pledge.network}.
+                </p>
+                <button className="btn btn-ghost" type="button" style={{ marginTop: 10 }} onClick={() => storeNetwork(pledge.network)}>
+                  Switch to {networkLabel(pledge.network)}
+                </button>
+              </div>
+            )}
+            {netOk && (phase === 'active' || phase === 'unfunded') && !connected && (
               <>
                 <div className="callout">
                   <strong>Wallet not connected</strong>
@@ -251,7 +266,7 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
                 <ConnectWallet size="lg" />
               </>
             )}
-            {(phase === 'active' || phase === 'unfunded') && connected && !mine && (
+            {netOk && (phase === 'active' || phase === 'unfunded') && connected && !mine && (
               <div className="callout">
                 <strong>Different wallet</strong>
                 <p>This wallet isn’t the staker on this pledge. Connect the wallet that created it.</p>
@@ -403,7 +418,7 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
             )}
 
             {msg && <p className={msg.endsWith('sent.') ? 'ok-text' : 'error-text'}>{msg}</p>}
-            {pledge.lastTxid && <TxLink txid={pledge.lastTxid} label={outcome === 'kept' ? 'Refund tx' : outcome ? 'Payout tx' : 'Latest tx'} />}
+            {pledge.lastTxid && <TxLink txid={pledge.lastTxid} network={pledge.network} label={outcome === 'kept' ? 'Refund tx' : outcome ? 'Payout tx' : 'Latest tx'} />}
           </div>
         </aside>
       </div>
@@ -487,7 +502,7 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
               <div className="kv-row">
                 <dt>Address</dt>
                 <dd className="addr">
-                  <a href={EXPLORER_ADDR + pledge.contractAddress} target="_blank" rel="noreferrer">
+                  <a href={explorerAddr(pledge.network, pledge.contractAddress)} target="_blank" rel="noreferrer">
                     {pledge.contractAddress}
                   </a>
                 </dd>
@@ -501,7 +516,7 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
                 <dd>{pledge.network === 'mainnet' ? 'Mainnet · real BCH' : 'Chipnet · test coins'}</dd>
               </div>
             </dl>
-            {pledge.lockTxid && <TxLink txid={pledge.lockTxid} label="Lock tx" />}
+            {pledge.lockTxid && <TxLink txid={pledge.lockTxid} network={pledge.network} label="Lock tx" />}
           </div>
         </aside>
       </div>

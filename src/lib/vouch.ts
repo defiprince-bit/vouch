@@ -20,6 +20,7 @@ import {
   CashAddressType,
 } from '@bitauth/libauth';
 import artifact from './Vouch.artifact';
+import { activeNetwork, checkAddress } from './network';
 
 export type { BchNetwork } from './providers';
 
@@ -45,9 +46,9 @@ export interface PledgeParams {
   maxFee?: bigint;
 }
 
-/** Network is chipnet unless NEXT_PUBLIC_BCH_NETWORK=mainnet is set explicitly. */
+/** Active network: the browser's saved choice, else NEXT_PUBLIC_BCH_NETWORK (chipnet by default). */
 export function getNetwork(): BchNetwork {
-  return process.env.NEXT_PUBLIC_BCH_NETWORK === 'mainnet' ? 'mainnet' : 'chipnet';
+  return activeNetwork();
 }
 
 export function getProvider(network: BchNetwork = getNetwork()): NetworkProvider {
@@ -72,9 +73,13 @@ export function stakerP2pkhAddress(stakerPubkey: Uint8Array, network: BchNetwork
   return encodeCashAddress({ prefix, type: CashAddressType.p2pkh, payload: hash160(stakerPubkey) }).address;
 }
 
-/** UI-side guards from the trust model (not enforceable on-chain). */
-export function validatePledge(params: PledgeParams, stake: bigint): string[] {
+/** UI-side guards from the trust model (not enforceable on-chain). With `network`, the beneficiary must be on it. */
+export function validatePledge(params: PledgeParams, stake: bigint, network?: BchNetwork): string[] {
   const issues: string[] = [];
+  if (network) {
+    const c = checkAddress(params.beneficiaryAddress, network);
+    if (!c.ok) issues.push(`Beneficiary: ${c.error}`);
+  }
   if (stake < MIN_STAKE) issues.push(`Stake must be at least ${MIN_STAKE} sats`);
   if (binToHex(params.verifierPubkey) === binToHex(params.stakerPubkey)) {
     issues.push('Verifier is the staker: this is a self-honour pledge');
@@ -94,6 +99,11 @@ export function createPledgeContract(params: PledgeParams, provider: NetworkProv
     throw new Error('Pubkeys must be 33-byte compressed keys');
   }
   if (!Number.isInteger(params.deadline) || params.deadline <= 0) throw new Error('Bad deadline');
+  const net = provider.network;
+  if (net === 'chipnet' || net === 'mainnet') {
+    const c = checkAddress(params.beneficiaryAddress, net);
+    if (!c.ok) throw new Error(`Beneficiary: ${c.error}`);
+  }
   const pledgeId = hexToBin(params.pledgeId);
   if (pledgeId.length !== 16) throw new Error('pledgeId must be 16 bytes');
   const maxFee = params.maxFee ?? DEFAULT_MAX_FEE;

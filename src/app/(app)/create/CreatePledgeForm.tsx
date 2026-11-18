@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { hexToBin } from '@bitauth/libauth';
 import { createPledgeContract, getProvider, newPledgeId, validatePledge, verifyByHeight, MIN_STAKE, DEFAULT_MAX_FEE } from '@/lib/vouch';
 import { savePledge, type StoredPledge } from '@/lib/pledges';
-import { NETWORK, EXPLORER_ADDR } from '@/lib/config';
+import { checkAddress, explorerAddr } from '@/lib/network';
+import { useNetwork } from '@/lib/useNetwork';
 import { bchToSats, blocksUntil, formatBch, formatDateTime, formatSats, toDateTimeLocal, estimateBlockTime } from '@/lib/format';
 import { TxLink } from '@/components/TxLink';
 import { Ticket } from '@/components/Ticket';
@@ -20,6 +21,7 @@ const SAME_ADDR = 'The verifier and the beneficiary can’t be the same. If they
 
 export function CreatePledgeForm() {
   const wallet = useWallet();
+  const network = useNetwork();
   const demo = useDemoVerifier();
   const [step, setStep] = useState<Step>('details');
   const [habit, setHabit] = useState('');
@@ -45,13 +47,29 @@ export function CreatePledgeForm() {
   useEffect(() => {
     if (wallet.state !== 'connected' || !wallet.manager) return;
     let live = true;
-    walletBalance(wallet.manager, NETWORK)
+    walletBalance(wallet.manager, network)
       .then((b) => live && setWalletSats(b))
       .catch(() => live && setWalletSats(null));
     return () => {
       live = false;
     };
-  }, [wallet.state, wallet.manager, step]);
+  }, [wallet.state, wallet.manager, step, network]);
+
+  // A draft is built for one network; if the user switches, send them back to edit it.
+  const [draftNetwork, setDraftNetwork] = useState(network);
+  if (draftNetwork !== network) {
+    setDraftNetwork(network);
+    if (step === 'review') {
+      setDraft(null);
+      setLockMsg(null);
+      setStep('details');
+    }
+    setErrors([]);
+  }
+  const beneCheck = beneficiary.trim() ? checkAddress(beneficiary, network) : null;
+  // Wrong-network addresses are flagged as soon as they're pasted; malformed ones after the first submit.
+  const [triedSubmit, setTriedSubmit] = useState(false);
+  const beneError = beneCheck && !beneCheck.ok && (beneCheck.network || triedSubmit) ? beneCheck.error : null;
 
   const sats = bchToSats(amount);
   const minFail = sats !== null && sats < MIN_STAKE;
@@ -73,29 +91,32 @@ export function CreatePledgeForm() {
   async function review(e: React.FormEvent) {
     e.preventDefault();
     setErrors([]);
+    setTriedSubmit(true);
     const errs: string[] = [];
     if (!habit.trim()) errs.push('Write the habit in one line.');
     if (sats === null || sats < MIN_STAKE) errs.push(`The stake must be at least ${formatSats(MIN_STAKE)} (${formatBch(MIN_STAKE)}), so the payout stays above dust after fees.`);
     if (!Number.isFinite(deadlineMs) || deadlineMs - Date.now() < MIN_DEADLINE_BLOCKS * 600_000) errs.push('Pick a deadline at least 2 hours from now.');
     if (!/^[0-9a-f]{66}$/i.test(stakerHex)) errs.push('Connect your wallet first (or paste your public key below).');
+    if (!beneficiary.trim()) errs.push('Enter the beneficiary’s address.');
+    else if (beneCheck && !beneCheck.ok) errs.push(`Beneficiary: ${beneCheck.error}`);
     if (!/^[0-9a-f]{66}$/i.test(verifierHex)) {
       errs.push(verifierMode === 'demo' ? 'The demo verifier is not available on this deployment. Pick a friend.' : 'Paste your friend’s verifier key. They get it from the /verifier-key page.');
     }
     if (errs.length) return setErrors(errs);
     setBusy(true);
     try {
-      const provider = getProvider();
+      const provider = getProvider(network);
       const height = await provider.getBlockHeight();
       const now = Date.now();
       const deadline = height + blocksUntil(deadlineMs, now, MIN_DEADLINE_BLOCKS);
       const params = {
         stakerPubkey: hexToBin(stakerHex),
         verifierPubkey: hexToBin(verifierHex),
-        beneficiaryAddress: beneficiary.trim(),
+        beneficiaryAddress: beneCheck && beneCheck.ok ? beneCheck.address : beneficiary.trim(),
         deadline,
         pledgeId: newPledgeId(),
       };
-      const issues = validatePledge(params, sats!).map((i) => (i === 'Verifier must not be the beneficiary' ? SAME_ADDR : i));
+      const issues = validatePledge(params, sats!, network).map((i) => (i === 'Verifier must not be the beneficiary' ? SAME_ADDR : i));
       const hard = issues.filter((i) => !i.startsWith('Verifier is the staker'));
       if (hard.length) return setErrors(hard);
       const contract = createPledgeContract(params, provider);
@@ -112,7 +133,7 @@ export function CreatePledgeForm() {
         verifierKind: verifierMode,
         verifierName: verifierMode === 'friend' ? friendName.trim() || undefined : undefined,
         contractAddress: contract.address,
-        network: NETWORK,
+        network,
         createdAt: now,
       });
       setStep('review');
@@ -130,6 +151,7 @@ export function CreatePledgeForm() {
     setBusy(true);
     setLockMsg('Check your wallet to approve the lock…');
     try {
+      if (draft.network !== network) throw new Error(`This draft is for ${draft.network}, but the app is on ${network}. Edit the details to rebuild it.`);
       const { txid } = await lockFromWallet(wallet.manager, draft);
       savePledge({ ...draft, lastTxid: txid, lockTxid: txid });
       setLockTxid(txid);
@@ -186,6 +208,14 @@ export function CreatePledgeForm() {
         {step === 'details' && (
           <section>
             <form className="form-section" onSubmit={review} noValidate>
+              {network === 'mainnet' ? (
+                <div className="callout callout-warn" role="note" data-testid="mainnet-warning">
+                  <strong>Mainnet: this locks real BCH</strong>
+                  <p>Use a tiny amount you’re fine losing (the minimum is {formatSats(MIN_STAKE)}). If you break the pledge or miss the deadline, the stake really goes to the beneficiary. Your wallet must be on mainnet too.</p>
+                </div>
+              ) : (
+                <p className="footnote" style={{ margin: '0 0 12px' }} data-testid="chipnet-note">On chipnet: test coins with no value. Switch to mainnet with the network badge at the top.</p>
+              )}
               <div className="field">
                 <label htmlFor="habit">The habit</label>
                 <textarea id="habit" maxLength={140} required value={habit} onChange={(e) => setHabit(e.target.value)} placeholder="Run three mornings this week." />
@@ -256,10 +286,16 @@ export function CreatePledgeForm() {
                   <label htmlFor="bene-name">Beneficiary name <span style={{ fontWeight: 400, color: 'var(--ink-muted)' }}>(optional)</span></label>
                   <input id="bene-name" value={beneName} onChange={(e) => setBeneName(e.target.value)} placeholder="Chidi" />
                 </div>
-                <div className={`field${sameAddr ? ' is-invalid' : ''}`}>
+                <div className={`field${sameAddr || beneError ? ' is-invalid' : ''}`}>
                   <label htmlFor="beneficiary">Beneficiary address</label>
-                  <input id="beneficiary" required spellCheck={false} value={beneficiary} onChange={(e) => setBeneficiary(e.target.value)} placeholder={NETWORK === 'mainnet' ? 'bitcoincash:q…' : 'bchtest:q…'} />
-                  {sameAddr ? <p className="field-error" role="alert">{SAME_ADDR}</p> : <p className="hint">Paid in full if you break it or time runs out. Can’t be changed later.</p>}
+                  <input id="beneficiary" required spellCheck={false} value={beneficiary} onChange={(e) => setBeneficiary(e.target.value)} placeholder={network === 'mainnet' ? 'bitcoincash:q…' : 'bchtest:q…'} aria-invalid={!!beneError} />
+                  {beneError ? (
+                    <p className="field-error" role="alert" data-testid="beneficiary-error">{beneError}</p>
+                  ) : sameAddr ? (
+                    <p className="field-error" role="alert">{SAME_ADDR}</p>
+                  ) : (
+                    <p className="hint">A {network} address ({network === 'mainnet' ? 'bitcoincash:' : 'bchtest:'}…). Paid in full if you break it or time runs out. Can’t be changed later.</p>
+                  )}
                 </div>
               </div>
               {!wallet.stakerPubkeyHex && (
@@ -268,7 +304,7 @@ export function CreatePledgeForm() {
                   <input id="manual-staker" spellCheck={false} value={manualStaker} onChange={(e) => setManualStaker(e.target.value)} placeholder="02… or 03…" />
                 </div>
               )}
-              {errors.filter((m) => m !== SAME_ADDR).map((m) => <p key={m} className="field-error" role="alert">{m}</p>)}
+              {errors.filter((m) => m !== SAME_ADDR && !m.startsWith('Beneficiary: ')).map((m) => <p key={m} className="field-error" role="alert">{m}</p>)}
               <div className="form-actions">
                 <button className="btn btn-primary btn-lg" type="submit" disabled={busy}>{busy ? 'Checking…' : 'Review where the coins go'}</button>
                 <Link className="btn btn-ghost" href="/">Cancel</Link>
@@ -300,7 +336,7 @@ export function CreatePledgeForm() {
                 <div className="kv-row"><dt>Deadline</dt><dd>{draft.deadlineAt ? formatDateTime(draft.deadlineAt) : ''} <span className="addr">(block {draft.deadline})</span></dd></div>
                 <div className="kv-row"><dt>Verify by</dt><dd>block {verifyByHeight(draft.deadline)}, about an hour before the deadline</dd></div>
                 <div className="kv-row"><dt>Verifier</dt><dd>{verifierLabel}{draft.verifierKind === 'demo' && <span className="footnote" style={{ display: 'block' }}>Demo verifier is run by Vouch.</span>}</dd></div>
-                <div className="kv-row"><dt>Contract</dt><dd className="addr"><a href={EXPLORER_ADDR + draft.contractAddress} target="_blank" rel="noreferrer">{draft.contractAddress}</a></dd></div>
+                <div className="kv-row"><dt>Contract</dt><dd className="addr"><a href={explorerAddr(draft.network, draft.contractAddress)} target="_blank" rel="noreferrer">{draft.contractAddress}</a></dd></div>
               </dl>
               {lockMsg && <p className="callout" style={{ marginTop: 12 }}>{lockMsg}</p>}
               <div className="form-actions">
@@ -323,7 +359,7 @@ export function CreatePledgeForm() {
             <div className="review-card">
               <h2>{lockTxid ? 'Locked.' : 'Pledge saved'}</h2>
               {lockTxid ? (
-                <TxLink txid={lockTxid} label="Lock transaction" />
+                <TxLink txid={lockTxid} network={draft.network} label="Lock transaction" />
               ) : (
                 <p className="lede" style={{ margin: '0 0 12px' }}>Send exactly <strong>{formatSats(draft.stakeSats)}</strong> to <span className="addr">{draft.contractAddress}</span> to lock it.</p>
               )}

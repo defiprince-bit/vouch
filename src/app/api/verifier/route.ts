@@ -4,10 +4,18 @@ import { getProvider } from '@/lib/providers';
 import { demoVerifierAction, loadVerifierKey, verifierPubkeyHex, VerifierError } from '@/server/verifier';
 import { jsonError, networkParam } from '@/server/http';
 
-export async function GET() {
+// A private key is network-agnostic (only its WIF/address encoding differs), so the same
+// COMMITCASH_VERIFIER_WIF verifies on chipnet and mainnet. ?network= is optional and validated.
+export async function GET(req: NextRequest) {
   await connection();
-  const key = loadVerifierKey();
-  return NextResponse.json({ enabled: !!key, pubkey: key ? verifierPubkeyHex(key) : null });
+  try {
+    const q = req.nextUrl.searchParams.get('network');
+    const network = q === null ? null : networkParam(q);
+    const key = loadVerifierKey();
+    return NextResponse.json({ enabled: !!key, pubkey: key ? verifierPubkeyHex(key) : null, networks: ['chipnet', 'mainnet'], ...(network ? { network } : {}) });
+  } catch (e) {
+    return jsonError(e);
+  }
 }
 
 export async function POST(req: NextRequest) {

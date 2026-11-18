@@ -13,6 +13,7 @@ import {
   DEFAULT_FEE,
   type BchNetwork,
 } from '@/lib/vouch';
+import { checkAddress } from '@/lib/network';
 
 export interface PledgeTerms {
   id: string;
@@ -47,6 +48,8 @@ function parseTerms(t: unknown): PledgeTerms {
   if (!hex33.test(p.stakerPubkey ?? '') || !hex33.test(p.verifierPubkey ?? '')) throw new VerifierError('Bad pubkeys');
   if (p.network !== 'chipnet' && p.network !== 'mainnet') throw new VerifierError('Bad network');
   if (typeof p.beneficiaryAddress !== 'string') throw new VerifierError('Bad beneficiary');
+  const bene = checkAddress(p.beneficiaryAddress, p.network);
+  if (!bene.ok) throw new VerifierError(`Beneficiary: ${bene.error}`);
   return p as PledgeTerms;
 }
 

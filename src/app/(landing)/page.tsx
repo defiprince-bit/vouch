@@ -3,8 +3,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Newsreader } from 'next/font/google';
 import { ConnectWallet } from '@/components/ConnectWallet';
-import { NetworkBadge } from '@/components/NetworkBadge';
-import { NETWORK, REPO_URL } from '@/lib/config';
+import { NetworkBadge, NetworkName } from '@/components/NetworkBadge';
+import { REPO_URL } from '@/lib/config';
 import { LandingRoot } from './LandingRoot';
 import './landing.css';
 
@@ -64,14 +64,14 @@ export default function Landing() {
         <section className="vl-hero vl-doc" aria-labelledby="h-hero">
           <div className="wrap vl-hero-grid">
             <div className="vl-hero-copy">
-              <p className="vl-eyebrow vl-r">Bitcoin Cash · {NETWORK}</p>
+              <p className="vl-eyebrow vl-r">Bitcoin Cash · <NetworkName /></p>
               <h1 id="h-hero" className="vl-r" style={d('.08s')}>Lock a little cash on a habit <em className="vl-serif">you’ll keep.</em></h1>
               <p className="vl-lede vl-r" style={d('.16s')}>Keep your word and the coins come back to you. Break it, or let the deadline pass, and they go to someone you chose.</p>
               <div className="vl-cta vl-r" style={d('.24s')}>
                 <Link className="btn btn-primary btn-lg" href="/create">Open app</Link>
                 <a className="btn btn-ghost btn-lg" href="#promise">How it works</a>
               </div>
-              <p className="vl-foot-note vl-r" style={d('.32s')}>CashScript covenant on {NETWORK} · connect with WizardConnect, e.g. Paytaca</p>
+              <p className="vl-foot-note vl-r" style={d('.32s')}>CashScript covenant on <NetworkName /> · connect with WizardConnect, e.g. Paytaca</p>
             </div>
 
             <div className="vl-hero-ticket vl-r" style={d('.2s')}>
@@ -181,7 +181,7 @@ export default function Landing() {
             <div className="vl-sealed">
               <div className="vl-sealed-copy">
                 <h2 id="h-sealed" className="vl-h2 vl-r" style={d('.06s')}>Sealed. <em className="vl-serif">Neither of you</em> can take it alone.</h2>
-                <p className="vl-body vl-r" style={d('.12s')}>The coins sit in a CashScript covenant on {NETWORK}. Not in our wallet, and not in your friend’s. The contract only lets them leave three ways.</p>
+                <p className="vl-body vl-r" style={d('.12s')}>The coins sit in a CashScript covenant on <NetworkName />. Not in our wallet, and not in your friend’s. The contract only lets them leave three ways.</p>
                 <p className="vl-foot-note vl-r" style={d('.18s')}>covenant: fee cap · outputs bound to each pledge · checkSig(verifier)</p>
               </div>
               <div className="vl-vault vl-r" style={d('.1s')}>
@@ -232,7 +232,7 @@ export default function Landing() {
             <span className="vl-line vl-line-accent"><em className="vl-accent">worth keeping</em></span>
             <span className="vl-line"><span className="vl-w"><span>with</span></span> <span className="vl-w"><span>Vouch.</span></span></span>
           </h2>
-          <p className="vl-close-sub">It takes about a minute. You’ll need a {NETWORK} wallet, such as Paytaca.</p>
+          <p className="vl-close-sub">It takes about a minute. You’ll need a <NetworkName /> wallet, such as Paytaca.</p>
           <Link className="vl-pill" href="/create">
             <span>Open app</span>
             <i aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M5 12h13M13 6l6 6-6 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg></i>
@@ -256,7 +256,7 @@ export default function Landing() {
               {REPO_URL ? <a className="vl-gh" href={REPO_URL} target="_blank" rel="noreferrer">GitHub</a> : null}
             </nav>
           </div>
-          <p className="vl-foot-base">Built for BCH Blaze 2026 · {NETWORK}</p>
+          <p className="vl-foot-base">Built for BCH Blaze 2026 · <NetworkName /></p>
         </footer>
       </section>
     </LandingRoot>

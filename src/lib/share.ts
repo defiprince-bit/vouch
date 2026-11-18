@@ -3,6 +3,7 @@
 // pre-signed keep signature.
 import { binToHex, hexToBin } from '@bitauth/libauth';
 import type { StoredPledge } from './pledges';
+import { addressNetwork, isNetwork } from './network';
 
 export interface VerifyRequest {
   v: 1;
@@ -40,7 +41,21 @@ export function decodeVerifyRequest(fragment: string): VerifyRequest {
   }
   if (!r || r.v !== 1 || !r.pledge || !r.utxo || !/^[0-9a-f]{130}$/i.test(r.stakerSig)) throw new Error('Invalid verify link');
   if (!/^[0-9a-f]{64}$/i.test(r.utxo.txid)) throw new Error('Invalid verify link');
+  checkLinkNetwork(r.pledge);
   return r;
+}
+
+/** A link's addresses must all be on the network it claims (chipnet: bchtest:, mainnet: bitcoincash:). */
+export function checkLinkNetwork(p: Pick<StoredPledge, 'network' | 'beneficiaryAddress' | 'contractAddress'>) {
+  if (!isNetwork(p.network)) throw new Error('Invalid verify link: unknown network');
+  const bene = addressNetwork(p.beneficiaryAddress ?? '');
+  if (bene !== p.network) {
+    throw new Error(`Invalid verify link: the beneficiary address is ${bene ? `a ${bene}` : 'not a valid'} address, but the pledge is on ${p.network}`);
+  }
+  const contract = addressNetwork(p.contractAddress ?? '');
+  if (contract !== p.network) {
+    throw new Error(`Invalid verify link: the contract address is ${contract ? `a ${contract}` : 'not a valid'} address, but the pledge is on ${p.network}`);
+  }
 }
 
 /** `/verify#pledge=…`: the data stays in the fragment, which browsers never send to the server. */

@@ -10,6 +10,8 @@ import { Ticket } from '@/components/Ticket';
 import { ConnectWallet } from '@/components/ConnectWallet';
 import { useWallet } from '@/components/WalletProvider';
 import { useDemoVerifier } from '@/lib/useDemoVerifier';
+import { useNetwork } from '@/lib/useNetwork';
+import { networkLabel, storeNetwork } from '@/lib/network';
 import { pledgeContract, findWalletIndex, approveKeepAsVerifier } from '@/lib/walletActions';
 
 // Link data lives in the URL fragment, which browsers never send to the server. A `?pledge=` form
@@ -38,6 +40,7 @@ type Done = { txid: string; kind: 'kept' | 'broken' };
 export function VerifyPledge() {
   const hash = useHash();
   const wallet = useWallet();
+  const network = useNetwork();
   const demo = useDemoVerifier();
   const parsed = useMemo((): { req: VerifyRequest | null; error: string | null } => {
     if (hash === null) return { req: null, error: null };
@@ -91,6 +94,7 @@ export function VerifyPledge() {
   const beneName = p.beneficiaryName ?? 'the beneficiary';
   const stakerAddr = stakerP2pkhAddress(hexToBin(p.stakerPubkey), p.network);
   const blocked = busy || tooLate || settled;
+  const netOk = p.network === network;
 
   async function go(kind: Done['kind'], f: () => Promise<{ txid: string }>) {
     setBusy(true);
@@ -131,6 +135,7 @@ export function VerifyPledge() {
           <p className="crumbs">Verify</p>
           <h1>{title}</h1>
           <p className="lede">{lede}</p>
+          {p.network === 'mainnet' && <p className="footnote">Mainnet pledge: real BCH.</p>}
         </div>
         <span className={`badge ${badgeCls}`}>{badge}</span>
       </header>
@@ -175,6 +180,14 @@ export function VerifyPledge() {
                     </button>
                     <p className="footnote" style={{ marginTop: 10 }}>This pledge uses the demo verifier, which is run by Vouch.</p>
                   </>
+                ) : !netOk ? (
+                  <div className="callout callout-warn" role="note" data-testid="network-mismatch">
+                    <strong>This pledge is on {p.network}</strong>
+                    <p>The app is on {network}. Switch the app to {p.network}, then connect a wallet on {p.network} to sign.</p>
+                    <button className="btn btn-ghost" type="button" style={{ marginTop: 10 }} onClick={() => storeNetwork(p.network)}>
+                      Switch to {networkLabel(p.network)}
+                    </button>
+                  </div>
                 ) : !connected ? (
                   <>
                     <div className="callout">
@@ -196,7 +209,7 @@ export function VerifyPledge() {
               </>
             )}
             {msg && <p className="error-text">{msg}</p>}
-            {done && <TxLink txid={done.txid} label={done.kind === 'kept' ? 'Refund tx' : 'Payout tx'} />}
+            {done && <TxLink txid={done.txid} network={p.network} label={done.kind === 'kept' ? 'Refund tx' : 'Payout tx'} />}
           </div>
         </aside>
       </div>
