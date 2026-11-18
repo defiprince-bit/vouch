@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { MockNetworkProvider, SignatureTemplate, randomUtxo, placeholderSignature, type NetworkProvider } from 'cashscript';
-import { secp256k1, generatePrivateKey, encodeCashAddress, CashAddressType, hash160, binToHex, encodePrivateKeyWif } from '@bitauth/libauth';
+import { secp256k1, generatePrivateKey, encodeCashAddress, CashAddressType, hash160, binToHex, hexToBin, decodeTransaction, encodePrivateKeyWif } from '@bitauth/libauth';
 import {
   createPledgeContract,
   buildLock,
@@ -73,6 +73,17 @@ describe('wallet + verifier flows', () => {
     const req = toWcSignRequest(builder, inputs.map((_, i) => [i, 'receive', 0]), { broadcast: true, userPrompt: 'Lock' });
     // relay-safe: JSON round-trips with no bigint / Uint8Array left
     expect(() => JSON.stringify(req)).not.toThrow();
+    // Regression (Paytaca "Error reading Uint32LE: requires 4 bytes"): the wallet runs
+    // decodeTransaction(hexToBin(request.transaction.transaction)), so it must be non-empty tx hex.
+    const wire = JSON.parse(JSON.stringify(req)) as { transaction: { transaction: unknown; sourceOutputs: unknown[] } };
+    expect(typeof wire.transaction.transaction).toBe('string');
+    const decoded = decodeTransaction(hexToBin(wire.transaction.transaction as string));
+    expect(typeof decoded).not.toBe('string');
+    if (typeof decoded === 'string') throw new Error(decoded);
+    expect(decoded.inputs).toHaveLength(inputs.length);
+    expect(decoded.outputs[0].valueSatoshis).toBe(STAKE);
+    expect(decoded.version).toBe(2);
+    expect(wire.transaction.sourceOutputs).toHaveLength(inputs.length);
     await provider.sendRawTransaction(mockWalletSign(req, stakerWallet));
     const [u] = await provider.getUtxos(contract.address);
     expect(u.satoshis).toBe(STAKE);

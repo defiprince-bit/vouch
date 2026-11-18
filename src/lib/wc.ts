@@ -2,6 +2,8 @@
 // and pull signatures back out of signed transactions.
 import type { TransactionBuilder } from 'cashscript';
 import {
+  binToHex,
+  encodeTransaction,
   decodeTransaction,
   decodeAuthenticationInstructions,
   hexToBin,
@@ -27,14 +29,24 @@ export const DUMMY_SIGNATURE = (() => {
 })();
 
 export interface WcSignRequest {
-  transaction: Record<string, unknown>;
+  transaction: {
+    /** Unsigned transaction as hex. Wallets (Paytaca) run decodeTransaction(hexToBin(this)). */
+    transaction: string;
+    sourceOutputs: Record<string, unknown>[];
+    broadcast?: boolean;
+    userPrompt?: string;
+  };
   inputPaths: InputPath[];
 }
 
 /**
- * Build the object passed to `manager.signTransaction(...)`. The WC2 transaction object contains
- * Uint8Array/bigint values; the relay is JSON, so we encode them in libauth's extended format
- * ("<Uint8Array: 0x..>", "<bigint: 1n>"), which WizardConnect wallets parse.
+ * Build the object passed to `manager.signTransaction(...)`.
+ *
+ * The inner `transaction` MUST be the unsigned tx as a hex string: Paytaca's WizardConnect handler
+ * does `decodeTransaction(hexToBin(request.transaction.transaction))`, so sending CashScript's
+ * libauth Transaction object there decodes zero bytes ("Error reading Uint32LE: requires 4 bytes").
+ * Source outputs carry Uint8Array/bigint values; the relay is JSON, so they go in libauth's extended
+ * format ("<Uint8Array: 0x..>", "<bigint: 1n>"), which wallets parse with toUint8Array/toBigInt.
  */
 export function toWcSignRequest(
   builder: TransactionBuilder,
@@ -42,7 +54,16 @@ export function toWcSignRequest(
   opts: { broadcast: boolean; userPrompt: string },
 ): WcSignRequest {
   const wcObject = builder.generateWcTransactionObject({ broadcast: opts.broadcast, userPrompt: opts.userPrompt });
-  return { transaction: JSON.parse(stringify(wcObject)), inputPaths };
+  const txHex = binToHex(encodeTransaction(wcObject.transaction));
+  return {
+    transaction: {
+      transaction: txHex,
+      sourceOutputs: JSON.parse(stringify(wcObject.sourceOutputs)) as Record<string, unknown>[],
+      broadcast: opts.broadcast,
+      userPrompt: opts.userPrompt,
+    },
+    inputPaths,
+  };
 }
 
 /** Data pushes of one input's unlocking bytecode, in script order. */
