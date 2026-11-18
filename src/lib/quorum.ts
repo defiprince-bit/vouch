@@ -8,6 +8,7 @@ import { Contract, TransactionBuilder, placeholderSignature, type NetworkProvide
 import {
   binToHex,
   hexToBin,
+  hash160,
   hash256,
   sha256,
   utf8ToBin,
@@ -18,6 +19,7 @@ import {
 import quorumArtifact from './VouchQuorum.artifact';
 import { addressToLockingBytecode, DEFAULT_MAX_FEE, DUST, type Signer } from './vouch';
 import { unlockingPushes } from './wc';
+import { checkAddress } from './network';
 
 export const MAX_VERIFIERS = 5;
 /** Fee for every v2 spend. Fixed so all signers sign one identical tx; a 5-of-5 keep is ~1 KB. */
@@ -83,7 +85,13 @@ export function createQuorumContract(params: QuorumParams, provider: NetworkProv
   if (params.stakerPubkey.length !== 33) throw new Error('Pubkeys must be 33-byte compressed keys');
   const issues = quorumShapeIssues(binToHex(params.stakerPubkey), params.verifierPubkeys.map(binToHex), params.threshold);
   if (issues.length) throw new Error(issues[0]);
-  if (!Number.isInteger(params.deadline) || params.deadline <= 0) throw new Error('Bad deadline');
+  // Block heights only: the verify-by cutoff and the keeper treat the deadline as a height.
+  if (!Number.isInteger(params.deadline) || params.deadline <= 0 || params.deadline >= 500_000_000) throw new Error('Bad deadline: must be a block height');
+  const net = provider.network;
+  if (net === 'chipnet' || net === 'mainnet') {
+    const c = checkAddress(params.beneficiaryAddress, net);
+    if (!c.ok) throw new Error(`Beneficiary: ${c.error}`);
+  }
   const pledgeId = hexToBin(params.pledgeId);
   if (pledgeId.length !== 16) throw new Error('pledgeId must be 16 bytes');
   const [v0, v1, v2, v3, v4] = slotKeys(params.verifierPubkeys);
@@ -218,3 +226,20 @@ export function slotSignature(
   if (sig?.length !== 65) throw new Error('Signing failed');
   return sig;
 }
+
+/** UI-side guards for a v2 pledge (on top of quorumShapeIssues): no verifier may be the beneficiary. */
+export function quorumPledgeIssues(params: QuorumParams): string[] {
+  const issues = quorumShapeIssues(binToHex(params.stakerPubkey), params.verifierPubkeys.map(binToHex), params.threshold);
+  try {
+    const beneficiary = binToHex(addressToLockingBytecode(params.beneficiaryAddress));
+    const clash = params.verifierPubkeys.findIndex((pk) => beneficiary === '76a914' + binToHex(hash160(pk)) + '88ac');
+    if (clash >= 0) issues.push('Verifier must not be the beneficiary');
+  } catch (e) {
+    issues.push((e as Error).message);
+  }
+  if (!Number.isInteger(params.deadline) || params.deadline >= 500_000_000) issues.push('The deadline must be a block height');
+  return issues;
+}
+
+/** Did the user paste a CashAddress where a verifier public key belongs? */
+export const looksLikeAddress = (s: string) => /^(bitcoincash:|bchtest:|bchreg:)?[qpzr][0-9a-z]{40,}$/i.test(s.trim());

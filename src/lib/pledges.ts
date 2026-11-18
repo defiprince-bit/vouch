@@ -17,7 +17,34 @@ export interface StoredPledge {
   lastTxid?: string;
   lockTxid?: string;
   outcome?: 'kept' | 'broken' | 'settled'; // set when this browser sent the closing tx
+  /**
+   * Contract version. Missing or 1 = contracts/Vouch.cash (one verifier, `verifierPubkey`).
+   * 2 = contracts/VouchQuorum.cash: `verifiers` (1..5, slot order) and `threshold` (M). For v2,
+   * `verifierPubkey` mirrors verifiers[0] so older display code keeps working.
+   */
+  version?: 1 | 2;
+  verifiers?: QuorumVerifier[];
+  threshold?: number;
+  /** v2: signatures collected so far (link relay), all bound to `utxo`. */
+  quorum?: QuorumProgress;
 }
+
+export interface QuorumVerifier {
+  pubkey: string; // hex, 33 bytes
+  name?: string; // display only
+  kind?: 'demo' | 'friend';
+}
+
+export interface QuorumProgress {
+  utxo: { txid: string; vout: number; satoshis: string };
+  stakerSig?: string;
+  /** Per slot: hex keep signature or null. */
+  keepSigs: Array<string | null>;
+  /** Per slot: hex breakByVerifier signature or null. */
+  breakSigs: Array<string | null>;
+}
+
+export const isQuorumPledge = (p: Pick<StoredPledge, 'version'>) => p.version === 2;
 
 export const PLEDGES_KEY = 'vouch-pledges';
 /** Key used before the rename to Vouch; read as a fallback so existing pledges aren't lost. */

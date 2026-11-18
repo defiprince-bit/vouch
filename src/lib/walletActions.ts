@@ -19,6 +19,16 @@ import { toWcSignRequest, keepSignaturesFromTx, DUMMY_SIGNATURE, STAKER_PATH, ty
 import type { StoredPledge } from './pledges';
 import { gatherWalletUtxos, lockInputPaths, totalSats } from './walletUtxos';
 import type { VerifyRequest } from './share';
+import { isQuorumPledge } from './pledges';
+import { quorumContract } from './quorumShare';
+import { quorumTerms, quorumBreakByStaker, quorumForfeit } from './quorumActions';
+
+/** Either contract version, for reads (address, UTXOs). Spends go through the version's own builders. */
+export function anyPledgeContract(p: StoredPledge, provider?: NetworkProvider) {
+  if (!isQuorumPledge(p)) return pledgeContract(p, provider);
+  const prov = provider ?? getProvider(p.network);
+  return { provider: prov, contract: quorumContract(quorumTerms(p), prov) };
+}
 
 export function pledgeContract(p: Pick<StoredPledge, 'stakerPubkey' | 'verifierPubkey' | 'beneficiaryAddress' | 'deadline' | 'id' | 'network'>, provider?: NetworkProvider) {
   const prov = provider ?? getProvider(p.network);
@@ -42,6 +52,7 @@ export const pledgeTerms = (p: StoredPledge) => ({
   stakerPubkey: p.stakerPubkey,
   verifierPubkey: p.verifierPubkey,
   network: p.network,
+  ...(isQuorumPledge(p) ? { version: 2 as const, verifierPubkeys: p.verifiers!.map((v) => v.pubkey), threshold: p.threshold } : {}),
 });
 
 /** Ask the wallet to sign; if `broadcast`, also push it ourselves (harmless if the wallet already did). */
@@ -80,7 +91,7 @@ const stakerPath: InputPath = [0, STAKER_PATH.name, STAKER_PATH.index];
  * funds around). Change goes back to the staker's receive/0 address.
  */
 export async function lockFromWallet(manager: DappConnectionManager, p: StoredPledge) {
-  const { provider, contract } = pledgeContract(p);
+  const { provider, contract } = anyPledgeContract(p);
   const walletAddress = stakerP2pkhAddress(hexToBin(p.stakerPubkey), p.network);
   const walletUtxos = await gatherWalletUtxos(manager, provider, p.network);
   const { builder, inputs } = buildLock({ provider, walletUtxos, walletAddress, contractAddress: contract.address, stake: BigInt(p.stakeSats) });
@@ -192,6 +203,7 @@ export async function breakAsVerifier(manager: DappConnectionManager, r: VerifyR
 
 /** Staker admits it: stake goes to the beneficiary. */
 export async function breakFromWallet(manager: DappConnectionManager, p: StoredPledge) {
+  if (isQuorumPledge(p)) return quorumBreakByStaker(manager, p);
   const { provider, contract } = pledgeContract(p);
   const utxo = await lockedUtxo(contract);
   const builder = buildBreakByStaker({ contract, provider, utxo, stakerSig: placeholderSignature(), beneficiaryAddress: p.beneficiaryAddress });
@@ -201,6 +213,7 @@ export async function breakFromWallet(manager: DappConnectionManager, p: StoredP
 /** Settle an expired pledge: from the browser first, then via our server as a backup. */
 export async function settleExpiredPledge(p: StoredPledge): Promise<string> {
   try {
+    if (isQuorumPledge(p)) return await quorumForfeit(p);
     const { provider, contract } = pledgeContract(p);
     const utxo = await lockedUtxo(contract);
     const tx = await buildForfeit({ contract, provider, utxo, beneficiaryAddress: p.beneficiaryAddress, deadline: p.deadline }).send();

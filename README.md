@@ -33,14 +33,39 @@ Every path:
 
 Full one-pager: [`trust-model.md`](trust-model.md).
 
+## Verifier quorum (M of N)
+
+New pledges can name a **group** of 1–5 verifiers and how many must approve: 2 of 3, 3 of 5, 4 of 5, 1 of 5… (the demo verifier can be one of them on chipnet). These use a second contract, [`contracts/VouchQuorum.cash`](contracts/VouchQuorum.cash); single-verifier pledges keep using `Vouch.cash` unchanged, so every existing pledge and link still works (the stored pledge and the link carry `version: 2` for quorum pledges).
+
+- **keep:** staker + any M verifier signatures → stake back to the staker. **breakByVerifier:** any M verifiers → beneficiary. `breakByStaker` and `forfeit` are unchanged.
+- **One contract, five slots:** verifiers sit in fixed slots `v0..v4`, each matched to its own signature argument, and the contract counts `checkSig(s_i, v_i)` against the threshold. Unused slots hold pinned "nothing up my sleeve" keys (`02 || sha256("vouch/unused-verifier-slot/<i>/<n>")`), so nobody can sign for them. An absent signature is an empty push (counts 0); any non-empty invalid one fails the whole script (NULLFAIL). `checkMultiSig` wasn't used: wallets sign Schnorr, and the threshold has to be a constructor parameter. The compiled script is ≤ 520 bytes even with five slots and a P2SH32 beneficiary (tested), and a 5-of-5 keep tx is under 1 KB, inside the fixed 1,500-sat fee.
+- **Tokens:** every v2 path also requires the payout to carry the pledge input's token category (none for app-made stakes), so no spend can strip CashTokens off a pledge UTXO.
+- **No double counting:** a verifier's signature only verifies in their own slot. Duplicate keys are refused by the create form, by link decoding, by `createQuorumContract` and by the server; the contract itself doesn't re-check distinctness (10 pairwise checks would push it past 520 bytes), which only matters for a pledge someone builds outside the app, and the verify page refuses those.
+- **Replay:** each signature is a tx signature (`SIGHASH_ALL|UTXOS|FORKID`) over the one deterministic spend (that pledge's outpoint, its redeem script with the pledgeId, one fixed output, fixed fee), so it can't be used on another pledge, another lock of the same pledge, or the other path (a keep signature isn't a break vote).
+- **Signing without a backend (link relay):** the staker pre-signs the refund and gets **one link** for the whole group. Any verifier opens it, signs their slot in their wallet, and gets an updated link carrying their signature to pass to the next verifier (or back to the staker, who can paste it on the pledge page). Order doesn't matter; partial links merge slot by slot. Every signature in a link is checked against the sighash before it's shown or used, and whoever completes M of N broadcasts. All of it travels in the URL fragment.
+- **Griefing, not theft:** as before, verifiers can only ever send the stake to the staker (keep) or the beneficiary (break). M colluding verifiers can force a break; fewer than M can only withhold, and then the pledge forfeits at the deadline.
+
+```bash
+npm run chipnet:quorum           # real chipnet 2-of-3 keep (sigs collected one at a time) + 2-of-3 verifier break
+npx tsx scripts/e2e-quorum-app.mts http://localhost:3311   # 2-of-3 with the app's demo verifier as one of the three
+```
+
+Recorded quorum runs on chipnet (19 Nov 2026):
+
+| Flow | lock | spend |
+|---|---|---|
+| 2-of-3 keep, staker pre-signs, verifier 3 then verifier 1 sign separately | [d33425c0…71de](https://chipnet.imaginary.cash/tx/d33425c071c52ba3ef38066d55bdf3f04ab9a9c6a4a9be9114fc201afdaf71de) | [9b716c9b…8448](https://chipnet.imaginary.cash/tx/9b716c9b685943f30fbf7cf387b8058428ad3514c4c179af0cf0849306b78448) → staker |
+| 2-of-3 breakByVerifier (verifiers 2 + 3) | [3101159c…9e62](https://chipnet.imaginary.cash/tx/3101159c5785fa7f8a470323031d30496605ca85cfd08ebc8ba73cd3cf009e62) | [6076d727…87ea](https://chipnet.imaginary.cash/tx/6076d72769203fcb178ca50fcb1cbf3b30b35ef07f5795190e24fd40ad7887ea) → beneficiary |
+| 2-of-3 keep through the app: `/api/verifier` (demo slot) + a wallet-signed slot via the link | [bff62eeb…27a0](https://chipnet.imaginary.cash/tx/bff62eeb89f5c839ce22bbb69bd5e8212563b131a3e4f335fb7eaa96463527a0) | [cc183853…d31e](https://chipnet.imaginary.cash/tx/cc183853d9c6f4965267b5ec222f6520c025c3ad0e8645aa86faf61a245ad31e) → staker |
+
 ## Develop
 
 ```bash
 npm install
-npm test               # 39 tests: 20 covenant paths/attacks, 14 wallet flows (mock WizardConnect wallet), 5 format helpers
+npm test               # covenant paths/attacks (v1 + quorum), wallet flows with a mock WizardConnect wallet, network + rate-limit helpers
 npm run build
 npm run dev
-npm run compile:contract   # after editing contracts/Vouch.cash
+npm run compile:contract   # after editing contracts/Vouch.cash or contracts/VouchQuorum.cash
 ```
 
 ### Chipnet end-to-end
@@ -109,7 +134,17 @@ See [`.env.example`](.env.example). For a deployment:
 | `NEXT_PUBLIC_BCH_NETWORK` | public | `chipnet` (default) or `mainnet` |
 | `NEXT_PUBLIC_BCH_PROVIDER` | public | `auto` (default), `electrum`, `rest` |
 | `NEXT_PUBLIC_SLIDES_URL`, `NEXT_PUBLIC_REPO_URL`, `NEXT_PUBLIC_EMBER_ADDRESS` | public | banner links |
+| `DEMO_VERIFIER_MAINNET` | **server-only** | `1` lets the demo verifier sign mainnet pledges. Unset (default): it's chipnet-only, `/api/verifier` answers 403 for mainnet and the create form requires a friend or group there. |
 | `COMMITCASH_VERIFIER_WIF` | **server-only** | the app-operated demo verifier key (co-signs keep only). Never `NEXT_PUBLIC_`. Unset = demo verifier off. *Legacy name from before the rename to Vouch; kept as is because it's already set on Vercel.* |
+
+## Known limits
+
+- **The verify page shows the stake from the link.** The amount on a `/verify` page comes from the link's `stakeSats`; what a verifier signs is bound to the real locked UTXO (its outpoint and value are in the sighash), so a wrong number can't move different coins, but the page doesn't re-read the amount from the chain before showing it.
+- **Upstream error text leaks.** Errors from the chain backends (Electrum / mainnet.cash) are passed to the browser mostly as-is, so they can expose upstream hostnames or messages.
+- **Rate limiting is per server instance.** `/api/*` has a simple in-memory per-IP limit (600/min for `/api/chain`, 30/min for the signing routes, in `src/proxy.ts`). On Vercel each instance counts separately, so it slows hammering rather than hard-capping it.
+- **Duplicate verifier keys are enforced off-chain** (see the quorum section above).
+- **Deadlines are block heights.** The create form, links and the server refuse a deadline ≥ 500,000,000 (that would be a clock time) and the create form one within 6 blocks of now.
+- **Pledges live in one browser.** The pledge list and collected quorum signatures are in localStorage; links are the only way they travel.
 
 ## License
 

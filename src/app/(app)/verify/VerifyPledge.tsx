@@ -2,7 +2,9 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { hexToBin } from '@bitauth/libauth';
-import { decodeVerifyRequest, type VerifyRequest } from '@/lib/share';
+import type { VerifyRequest } from '@/lib/share';
+import { decodeAnyVerifyRequest, isQuorumRequest, type QuorumVerifyRequest } from '@/lib/quorumShare';
+import { VerifyQuorum } from './VerifyQuorum';
 import { stakerP2pkhAddress, verifyByHeight } from '@/lib/vouch';
 import { formatBch, formatDateTime, shortAddr, BLOCK_SECONDS } from '@/lib/format';
 import { TxLink } from '@/components/TxLink';
@@ -39,18 +41,24 @@ type Done = { txid: string; kind: 'kept' | 'broken' };
 
 export function VerifyPledge() {
   const hash = useHash();
-  const wallet = useWallet();
-  const network = useNetwork();
-  const demo = useDemoVerifier();
-  const parsed = useMemo((): { req: VerifyRequest | null; error: string | null } => {
+  const parsed = useMemo((): { req: VerifyRequest | QuorumVerifyRequest | null; error: string | null } => {
     if (hash === null) return { req: null, error: null };
     if (!hash || hash === '#') return { req: null, error: 'This link is missing its pledge details. Ask your friend to copy the whole link again.' };
     try {
-      return { req: decodeVerifyRequest(hash), error: null };
+      return { req: decodeAnyVerifyRequest(hash), error: null };
     } catch (e) {
       return { req: null, error: (e as Error).message };
     }
   }, [hash]);
+  // VerifyQuorum keeps its own copy (it rewrites the hash as signatures are added); remount only for another pledge/lock.
+  if (parsed.req && isQuorumRequest(parsed.req)) return <VerifyQuorum key={`${parsed.req.pledge.contractAddress}:${parsed.req.utxo.txid}`} initial={parsed.req} />;
+  return <VerifyV1 hash={hash} parsed={parsed as { req: VerifyRequest | null; error: string | null }} />;
+}
+
+function VerifyV1({ hash, parsed }: { hash: string | null; parsed: { req: VerifyRequest | null; error: string | null } }) {
+  const wallet = useWallet();
+  const network = useNetwork();
+  const demo = useDemoVerifier();
   const req = parsed.req;
   const [chain, setChain] = useState<{ height: number; locked: boolean; at: number } | null>(null);
   const [msg, setMsg] = useState<string | null>(null);

@@ -11,8 +11,12 @@ import { TxLink } from '@/components/TxLink';
 import { Ticket } from '@/components/Ticket';
 import { ConnectWallet } from '@/components/ConnectWallet';
 import { useWallet } from '@/components/WalletProvider';
-import { pledgeContract, lockFromWallet, keepWithDemoVerifier, prepareVerifyRequest, breakFromWallet, settleExpiredPledge } from '@/lib/walletActions';
+import { anyPledgeContract, lockFromWallet, keepWithDemoVerifier, prepareVerifyRequest, breakFromWallet, settleExpiredPledge } from '@/lib/walletActions';
 import { verifyLink } from '@/lib/share';
+import { isQuorumPledge } from '@/lib/pledges';
+import { prepareQuorumRequest, progressOf } from '@/lib/quorumActions';
+import { useDemoVerifier } from '@/lib/useDemoVerifier';
+import { QuorumPanel } from './QuorumPanel';
 import { useNow } from '@/lib/useNow';
 
 type Chain = { kind: 'loading' } | { kind: 'error'; msg: string } | { kind: 'ok'; sats: bigint; height: number; at: number };
@@ -32,8 +36,10 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
   const [copied, setCopied] = useState(false);
   const now = useNow();
   const autoTried = useRef(false);
-  const isDemo = pledge.verifierKind !== 'friend';
-  const verifierName = isDemo ? 'Vouch demo' : (pledge.verifierName ?? 'Your friend');
+  const quorum = isQuorumPledge(pledge);
+  const demo = useDemoVerifier(pledge.network);
+  const isDemo = !quorum && pledge.verifierKind !== 'friend';
+  const verifierName = quorum ? `${pledge.threshold} of ${pledge.verifiers?.length ?? 0} verifiers` : isDemo ? 'Vouch demo' : (pledge.verifierName ?? 'Your friend');
   const beneName = pledge.beneficiaryName ?? 'the beneficiary';
 
   // Mobile: the mock pins "Your move" to the bottom of the screen on the status page.
@@ -44,7 +50,7 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
 
   const refresh = useCallback(async () => {
     try {
-      const { provider, contract } = pledgeContract(pledge);
+      const { provider, contract } = anyPledgeContract(pledge);
       const [utxos, height] = await Promise.all([contract.getUtxos(), provider.getBlockHeight()]);
       setChain({
         kind: 'ok',
@@ -127,6 +133,12 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
     setBusy('Keep');
     setMsg(null);
     try {
+      if (quorum) {
+        const q = await prepareQuorumRequest(wallet.manager, pledge);
+        savePledge({ ...pledge, quorum: progressOf(q) });
+        setMsg('Refund pre-signed. Share the signing link below with your verifiers.');
+        return;
+      }
       const req = await prepareVerifyRequest(wallet.manager, pledge);
       setShareUrl(verifyLink(window.location.origin, req));
     } catch (e) {
@@ -303,7 +315,7 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
               <>
                 <div className="action-bar actions-stack">
                   <button className="btn btn-keep btn-lg" type="button" disabled={tooLateToVerify} onClick={isDemo ? () => setConfirming(true) : askFriend}>
-                    {isDemo ? 'I kept it — request refund' : `I kept it — ask ${verifierName} to sign`}
+                    {isDemo ? 'I kept it — request refund' : quorum ? (pledge.quorum?.stakerSig ? 'Refresh my signing link' : `I kept it — ask ${pledge.threshold} of ${pledge.verifiers?.length} to sign`) : `I kept it — ask ${verifierName} to sign`}
                   </button>
                   <div>
                     <button
@@ -417,7 +429,7 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
               </div>
             )}
 
-            {msg && <p className={msg.endsWith('sent.') ? 'ok-text' : 'error-text'}>{msg}</p>}
+            {msg && <p className={msg.endsWith('sent.') || msg.startsWith('Refund pre-signed') ? 'ok-text' : 'error-text'}>{msg}</p>}
             {pledge.lastTxid && <TxLink txid={pledge.lastTxid} network={pledge.network} label={outcome === 'kept' ? 'Refund tx' : outcome ? 'Payout tx' : 'Latest tx'} />}
           </div>
         </aside>
@@ -440,7 +452,20 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
 
         <aside>
           <div className="panel">
-            <h2>Verifier</h2>
+            <h2>{quorum ? 'Verifiers' : 'Verifier'}</h2>
+            {quorum ? (
+              <QuorumPanel
+                pledge={pledge}
+                active={phase === 'active' && netOk}
+                demoPubkey={demo.pubkey}
+                demoEnabled={demo.enabled}
+                onSent={(id, outcome) => {
+                  record(id, { outcome });
+                  setMsg(`${outcome === 'kept' ? 'Refund' : 'Payout'}: sent.`);
+                }}
+              />
+            ) : (
+            <>
             <dl className="kv">
               <div className="kv-row">
                 <dt>Name</dt>
@@ -493,6 +518,8 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
                   {verifierName} opens this /verify#… link and signs the refund in their wallet. Pledge data stays in the hash, so it never reaches the server.
                 </p>
               </div>
+            )}
+            </>
             )}
           </div>
 

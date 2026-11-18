@@ -18,12 +18,12 @@ export interface VerifyRequest {
   stakerSig: string;
 }
 
-function toB64Url(s: string): string {
+export function toB64Url(s: string): string {
   const b64 = typeof btoa === 'function' ? btoa(unescape(encodeURIComponent(s))) : Buffer.from(s, 'utf8').toString('base64');
   return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-function fromB64Url(s: string): string {
+export function fromB64Url(s: string): string {
   const b64 = s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4);
   return typeof atob === 'function' ? decodeURIComponent(escape(atob(b64))) : Buffer.from(b64, 'base64').toString('utf8');
 }

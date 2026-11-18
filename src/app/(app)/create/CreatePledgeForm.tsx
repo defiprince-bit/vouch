@@ -13,6 +13,8 @@ import { ConnectWallet } from '@/components/ConnectWallet';
 import { useWallet } from '@/components/WalletProvider';
 import { useDemoVerifier } from '@/lib/useDemoVerifier';
 import { lockFromWallet, walletBalance } from '@/lib/walletActions';
+import { createQuorumContract, quorumPledgeIssues } from '@/lib/quorum';
+import { QuorumFields, rowKeyError, type VerifierRow } from './QuorumFields';
 import { useNow } from '@/lib/useNow';
 
 type Step = 'details' | 'review' | 'done';
@@ -22,14 +24,22 @@ const SAME_ADDR = 'The verifier and the beneficiary can’t be the same. If they
 export function CreatePledgeForm() {
   const wallet = useWallet();
   const network = useNetwork();
-  const demo = useDemoVerifier();
+  const demo = useDemoVerifier(network);
   const [step, setStep] = useState<Step>('details');
   const [habit, setHabit] = useState('');
   const [amount, setAmount] = useState('0.0001');
   const clientNow = useNow();
   const [deadlinePicked, setDeadlineLocal] = useState<string | null>(null);
   const deadlineLocal = deadlinePicked ?? (clientNow ? toDateTimeLocal(clientNow + 7 * 86_400_000) : '');
-  const [verifierMode, setVerifierMode] = useState<'demo' | 'friend'>('demo');
+  const [verifierModePicked, setVerifierMode] = useState<'demo' | 'friend' | 'group'>('demo');
+  // The demo verifier doesn't sign on mainnet (unless the server allows it): fall back to a friend.
+  const demoOk = demo.enabled;
+  const verifierMode = verifierModePicked === 'demo' && !demo.loading && !demoOk ? 'friend' : verifierModePicked;
+  const [groupRows, setGroupRows] = useState<VerifierRow[]>([{ name: '', key: '' }, { name: '', key: '' }]);
+  const [groupDemo, setGroupDemo] = useState(false);
+  const [threshold, setThreshold] = useState(2);
+  const groupKeys = [...(groupDemo && demoOk && demo.pubkey ? [{ pubkey: demo.pubkey, name: 'Vouch demo', kind: 'demo' as const }] : []), ...groupRows.filter((r) => r.key.trim()).map((r) => ({ pubkey: r.key.trim().toLowerCase(), name: r.name.trim() || undefined, kind: 'friend' as const }))];
+  const groupM = Math.min(threshold, Math.max(1, groupKeys.length));
   const [friendName, setFriendName] = useState('');
   const [friendKey, setFriendKey] = useState('');
   const [beneName, setBeneName] = useState('');
@@ -76,7 +86,7 @@ export function CreatePledgeForm() {
   const deadlineMs = new Date(deadlineLocal).getTime();
   const stakerHex = wallet.stakerPubkeyHex ?? manualStaker.trim();
   const verifierHex = verifierMode === 'demo' ? (demo.pubkey ?? '') : friendKey.trim();
-  const verifierLabel = verifierMode === 'demo' ? 'Vouch demo' : friendName.trim() || 'Your friend';
+  const verifierLabel = verifierMode === 'demo' ? 'Vouch demo' : verifierMode === 'group' ? `${groupM} of ${groupKeys.length || '…'} verifiers` : friendName.trim() || 'Your friend';
   const beneLabel = beneName.trim() || 'The beneficiary';
   const sameAddr = errors.includes(SAME_ADDR);
   const preview = useMemo(
@@ -99,8 +109,12 @@ export function CreatePledgeForm() {
     if (!/^[0-9a-f]{66}$/i.test(stakerHex)) errs.push('Connect your wallet first (or paste your public key below).');
     if (!beneficiary.trim()) errs.push('Enter the beneficiary’s address.');
     else if (beneCheck && !beneCheck.ok) errs.push(`Beneficiary: ${beneCheck.error}`);
-    if (!/^[0-9a-f]{66}$/i.test(verifierHex)) {
-      errs.push(verifierMode === 'demo' ? 'The demo verifier is not available on this deployment. Pick a friend.' : 'Paste your friend’s verifier key. They get it from the /verifier-key page.');
+    if (verifierMode === 'group') {
+      if (groupKeys.length < 1) errs.push('Add at least one verifier key.');
+      const bad = groupRows.map((r) => rowKeyError(r.key)).find(Boolean);
+      if (bad) errs.push(bad);
+    } else if (!/^[0-9a-f]{66}$/i.test(verifierHex)) {
+      errs.push(verifierMode === 'demo' ? 'The demo verifier is not available here. Pick a friend.' : 'Paste your friend’s verifier key. They get it from the /verifier-key page.');
     }
     if (errs.length) return setErrors(errs);
     setBusy(true);
@@ -109,10 +123,46 @@ export function CreatePledgeForm() {
       const height = await provider.getBlockHeight();
       const now = Date.now();
       const deadline = height + blocksUntil(deadlineMs, now, MIN_DEADLINE_BLOCKS);
+      // A block height, comfortably past the verify-by margin (the contract would read >= 500M as a clock time).
+      if (deadline <= height + 6 || deadline >= 500_000_000) return setErrors(['Pick a deadline at least 2 hours from now.']);
+      const beneficiaryAddress = beneCheck && beneCheck.ok ? beneCheck.address : beneficiary.trim();
+      if (verifierMode === 'group') {
+        const qParams = {
+          stakerPubkey: hexToBin(stakerHex),
+          verifierPubkeys: groupKeys.map((v) => hexToBin(v.pubkey)),
+          threshold: groupM,
+          beneficiaryAddress,
+          deadline,
+          pledgeId: newPledgeId(),
+        };
+        const qIssues = quorumPledgeIssues(qParams).map((i) => (i === 'Verifier must not be the beneficiary' ? SAME_ADDR : i));
+        if (qIssues.length) return setErrors(qIssues);
+        const contract = createQuorumContract(qParams, provider);
+        setDraft({
+          id: qParams.pledgeId,
+          promise: habit.trim(),
+          stakeSats: sats!.toString(),
+          deadline,
+          deadlineAt: estimateBlockTime(deadline, height, now),
+          beneficiaryAddress,
+          beneficiaryName: beneName.trim() || undefined,
+          stakerPubkey: stakerHex,
+          verifierPubkey: groupKeys[0].pubkey,
+          verifierKind: 'friend',
+          version: 2,
+          verifiers: groupKeys,
+          threshold: groupM,
+          contractAddress: contract.address,
+          network,
+          createdAt: now,
+        });
+        setStep('review');
+        return;
+      }
       const params = {
         stakerPubkey: hexToBin(stakerHex),
         verifierPubkey: hexToBin(verifierHex),
-        beneficiaryAddress: beneCheck && beneCheck.ok ? beneCheck.address : beneficiary.trim(),
+        beneficiaryAddress,
         deadline,
         pledgeId: newPledgeId(),
       };
@@ -245,6 +295,7 @@ export function CreatePledgeForm() {
               <fieldset className="choice-set">
                 <legend>Verifier</legend>
                 <div className="choice-row">
+                  {(demoOk || demo.loading) && (
                   <label className="choice">
                     <input type="radio" name="verifier-type" checked={verifierMode === 'demo'} onChange={() => setVerifierMode('demo')} />
                     <span>
@@ -252,6 +303,7 @@ export function CreatePledgeForm() {
                       <span className="choice-help">Default. The app signs the refund in the demo wallet.</span>
                     </span>
                   </label>
+                  )}
                   <label className="choice">
                     <input type="radio" name="verifier-type" checked={verifierMode === 'friend'} onChange={() => setVerifierMode('friend')} />
                     <span>
@@ -259,7 +311,20 @@ export function CreatePledgeForm() {
                       <span className="choice-help">Share a signing link after you lock. They sign the refund in their wallet.</span>
                     </span>
                   </label>
+                  <label className="choice">
+                    <input type="radio" name="verifier-type" checked={verifierMode === 'group'} onChange={() => setVerifierMode('group')} data-testid="verifier-group" />
+                    <span>
+                      <b>A group</b>
+                      <span className="choice-help">Up to 5 verifiers; pick how many must approve (2 of 3, 3 of 5…).</span>
+                    </span>
+                  </label>
                 </div>
+                {!demo.loading && !demoOk && network === 'mainnet' && (
+                  <p className="footnote" style={{ marginTop: 8 }}>On mainnet the demo verifier is off: name a friend or a group.</p>
+                )}
+                {verifierMode === 'group' && (
+                  <QuorumFields rows={groupRows} setRows={setGroupRows} includeDemo={groupDemo} setIncludeDemo={setGroupDemo} demoAvailable={demoOk} threshold={groupM} setThreshold={setThreshold} />
+                )}
                 {verifierMode === 'demo' && (
                   <p className="footnote" style={{ marginTop: 8 }}>
                     {!demo.loading && !demo.pubkey
@@ -335,7 +400,7 @@ export function CreatePledgeForm() {
                 <div className="kv-row"><dt>Habit</dt><dd>{draft.promise}</dd></div>
                 <div className="kv-row"><dt>Deadline</dt><dd>{draft.deadlineAt ? formatDateTime(draft.deadlineAt) : ''} <span className="addr">(block {draft.deadline})</span></dd></div>
                 <div className="kv-row"><dt>Verify by</dt><dd>block {verifyByHeight(draft.deadline)}, about an hour before the deadline</dd></div>
-                <div className="kv-row"><dt>Verifier</dt><dd>{verifierLabel}{draft.verifierKind === 'demo' && <span className="footnote" style={{ display: 'block' }}>Demo verifier is run by Vouch.</span>}</dd></div>
+                <div className="kv-row"><dt>Verifier</dt><dd>{draft.version === 2 ? `${draft.threshold} of ${draft.verifiers!.length}: ${draft.verifiers!.map((v, i) => v.name ?? `Verifier ${i + 1}`).join(', ')}` : verifierLabel}{draft.verifierKind === 'demo' && <span className="footnote" style={{ display: 'block' }}>Demo verifier is run by Vouch.</span>}</dd></div>
                 <div className="kv-row"><dt>Contract</dt><dd className="addr"><a href={explorerAddr(draft.network, draft.contractAddress)} target="_blank" rel="noreferrer">{draft.contractAddress}</a></dd></div>
               </dl>
               {lockMsg && <p className="callout" style={{ marginTop: 12 }}>{lockMsg}</p>}
@@ -364,7 +429,9 @@ export function CreatePledgeForm() {
                 <p className="lede" style={{ margin: '0 0 12px' }}>Send exactly <strong>{formatSats(draft.stakeSats)}</strong> to <span className="addr">{draft.contractAddress}</span> to lock it.</p>
               )}
               <p className="lede" style={{ margin: '16px 0' }}>
-                {draft.verifierKind === 'friend'
+                {draft.version === 2
+                  ? `When you’ve kept it, open the pledge and tap Keep: it makes one signing link for your verifiers. Any ${draft.threshold} of the ${draft.verifiers!.length} sign, one after another.`
+                  : draft.verifierKind === 'friend'
                   ? `When you’ve kept it, open the pledge and tap Keep: it makes a signing link for ${verifierLabel}. They sign the refund in their wallet.`
                   : 'When you’ve kept it, open the pledge and tap Keep before the verify-by time. The demo verifier signs the refund.'}
               </p>

@@ -37,3 +37,15 @@ Each output is pinned to `this.activeInputIndex` (or each path requires `tx.inpu
 Keep pays the staker. Break by staker. Break by verifier. Forfeit fails before the deadline and passes after it. Each of the following must fail: a high-fee forfeit, a wrong output address, a KEEP datasig replayed from another pledgeId, a two-pledge bundle, and keep with only one signature.
 
 **Verdict:** the model is sound for v1. "Can't reclaim alone, can't be stolen, forfeit needs no one" holds as long as the fee bound, per-input output pinning and pledgeId in datasigs are all there. The real trust assumption is the human verifier, and the deck should say so plainly.
+
+## v2: verifier quorum (contracts/VouchQuorum.cash)
+
+Same four paths; the verifier becomes a group of N = 1..5 keys with a threshold M = 1..N.
+
+- **keep** = staker sig + any M verifier sigs; **breakByVerifier** = any M verifier sigs; **breakByStaker** and **forfeit** unchanged. Every path keeps v1's per-input output pinning and `maxFee` bound, and adds `tx.outputs[i].tokenCategory == tx.inputs[i].tokenCategory`.
+- **Slots:** five fixed pubkey slots, signature `s_i` only ever checked against `v_i`, so one key counts once. Unused slots are pinned NUMS keys nobody can sign for. Missing signatures are empty pushes; a non-empty invalid one fails the script (NULLFAIL), so clients verify every collected signature before broadcasting.
+- **Who can do what:** fewer than M verifiers can only withhold (then it forfeits at the deadline). M verifiers can keep (with the staker) or break. No set of verifiers can pay anyone but the staker or the beneficiary: verifiers can grief, never steal.
+- **Collusion:** M verifiers + the beneficiary can lie "broken"; the UI refuses any verifier whose P2PKH is the beneficiary. Staker + M verifiers can lie "kept".
+- **Replay:** signatures commit to the pledge outpoint and its redeem script (which contains the pledgeId), so they don't carry over to another pledge, another lock, or the other spend path.
+- **Duplicates:** refused off-chain (create form, link decoder, contract constructor helper, server); not re-checked on-chain, to keep the script under 520 bytes.
+- **Old pledges:** stored pledges and links without `version: 2` load the v1 `Vouch` artifact exactly as before; its bytecode and a known chipnet address are pinned by tests.
