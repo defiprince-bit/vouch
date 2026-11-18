@@ -13,7 +13,7 @@ import { ConnectWallet } from '@/components/ConnectWallet';
 import { useWallet } from '@/components/WalletProvider';
 import { useDemoVerifier } from '@/lib/useDemoVerifier';
 import { lockFromWallet, walletBalance } from '@/lib/walletActions';
-import { createQuorumContract, quorumPledgeIssues } from '@/lib/quorum';
+import { createQuorumContract, quorumPledgeIssues, quorumShapeIssues, quorumPowerCopy } from '@/lib/quorum';
 import { QuorumFields, rowKeyError, type VerifierRow } from './QuorumFields';
 import { useNow } from '@/lib/useNow';
 
@@ -39,7 +39,8 @@ export function CreatePledgeForm() {
   const [groupDemo, setGroupDemo] = useState(false);
   const [threshold, setThreshold] = useState(2);
   const groupKeys = [...(groupDemo && demoOk && demo.pubkey ? [{ pubkey: demo.pubkey, name: 'Vouch demo', kind: 'demo' as const }] : []), ...groupRows.filter((r) => r.key.trim()).map((r) => ({ pubkey: r.key.trim().toLowerCase(), name: r.name.trim() || undefined, kind: 'friend' as const }))];
-  const groupM = Math.min(threshold, Math.max(1, groupKeys.length));
+  // Not clamped: an M larger than the real verifier count is refused, never silently lowered.
+  const groupM = threshold;
   const [friendName, setFriendName] = useState('');
   const [friendKey, setFriendKey] = useState('');
   const [beneName, setBeneName] = useState('');
@@ -113,6 +114,11 @@ export function CreatePledgeForm() {
       if (groupKeys.length < 1) errs.push('Add at least one verifier key.');
       const bad = groupRows.map((r) => rowKeyError(r.key)).find(Boolean);
       if (bad) errs.push(bad);
+      else if (groupKeys.length) {
+        // Same shape rules the verify page and the server apply (M range, duplicates, staker in a slot).
+        const shape = quorumShapeIssues(stakerHex, groupKeys.map((v) => v.pubkey), groupM).filter((i) => !i.startsWith('Every verifier'));
+        errs.push(...shape);
+      }
     } else if (!/^[0-9a-f]{66}$/i.test(verifierHex)) {
       errs.push(verifierMode === 'demo' ? 'The demo verifier is not available here. Pick a friend.' : 'Paste your friend’s verifier key. They get it from the /verifier-key page.');
     }
@@ -323,7 +329,7 @@ export function CreatePledgeForm() {
                   <p className="footnote" style={{ marginTop: 8 }}>On mainnet the demo verifier is off: name a friend or a group.</p>
                 )}
                 {verifierMode === 'group' && (
-                  <QuorumFields rows={groupRows} setRows={setGroupRows} includeDemo={groupDemo} setIncludeDemo={setGroupDemo} demoAvailable={demoOk} threshold={groupM} setThreshold={setThreshold} />
+                  <QuorumFields rows={groupRows} setRows={setGroupRows} includeDemo={groupDemo} setIncludeDemo={setGroupDemo} demoAvailable={demoOk} threshold={groupM} setThreshold={setThreshold} stakerHex={stakerHex} demoPubkey={demo.pubkey} />
                 )}
                 {verifierMode === 'demo' && (
                   <p className="footnote" style={{ marginTop: 8 }}>
@@ -400,7 +406,15 @@ export function CreatePledgeForm() {
                 <div className="kv-row"><dt>Habit</dt><dd>{draft.promise}</dd></div>
                 <div className="kv-row"><dt>Deadline</dt><dd>{draft.deadlineAt ? formatDateTime(draft.deadlineAt) : ''} <span className="addr">(block {draft.deadline})</span></dd></div>
                 <div className="kv-row"><dt>Verify by</dt><dd>block {verifyByHeight(draft.deadline)}, about an hour before the deadline</dd></div>
-                <div className="kv-row"><dt>Verifier</dt><dd>{draft.version === 2 ? `${draft.threshold} of ${draft.verifiers!.length}: ${draft.verifiers!.map((v, i) => v.name ?? `Verifier ${i + 1}`).join(', ')}` : verifierLabel}{draft.verifierKind === 'demo' && <span className="footnote" style={{ display: 'block' }}>Demo verifier is run by Vouch.</span>}</dd></div>
+                <div className="kv-row"><dt>Verifier</dt><dd>{draft.version === 2 ? `${draft.threshold} of ${draft.verifiers!.length}: ${draft.verifiers!.map((v, i) => v.name ?? `Verifier ${i + 1}`).join(', ')}` : verifierLabel}{draft.version === 2 && (() => {
+                  const pc = quorumPowerCopy(draft.threshold!, draft.verifiers!.length);
+                  return (
+                    <>
+                      <span className="footnote" style={{ display: 'block' }} data-testid="review-quorum-power">{pc.summary}</span>
+                      {pc.warning && <span className="field-error" style={{ display: 'block' }} role="note">{pc.warning}</span>}
+                    </>
+                  );
+                })()}{draft.verifierKind === 'demo' && <span className="footnote" style={{ display: 'block' }}>Demo verifier is run by Vouch.</span>}</dd></div>
                 <div className="kv-row"><dt>Contract</dt><dd className="addr"><a href={explorerAddr(draft.network, draft.contractAddress)} target="_blank" rel="noreferrer">{draft.contractAddress}</a></dd></div>
               </dl>
               {lockMsg && <p className="callout" style={{ marginTop: 12 }}>{lockMsg}</p>}
@@ -430,7 +444,7 @@ export function CreatePledgeForm() {
               )}
               <p className="lede" style={{ margin: '16px 0' }}>
                 {draft.version === 2
-                  ? `When you’ve kept it, open the pledge and tap Keep: it makes one signing link for your verifiers. Any ${draft.threshold} of the ${draft.verifiers!.length} sign, one after another.`
+                  ? `When you’ve kept it, open the pledge and tap Keep: it makes one signing link for your verifiers. Any ${draft.threshold} of the ${draft.verifiers!.length} sign, one after another. The same ${draft.threshold} could instead vote it broken and pay the beneficiary.`
                   : draft.verifierKind === 'friend'
                   ? `When you’ve kept it, open the pledge and tap Keep: it makes a signing link for ${verifierLabel}. They sign the refund in their wallet.`
                   : 'When you’ve kept it, open the pledge and tap Keep before the verify-by time. The demo verifier signs the refund.'}

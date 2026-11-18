@@ -14,6 +14,7 @@ import { ConnectWallet } from '@/components/ConnectWallet';
 import { useWallet } from '@/components/WalletProvider';
 import { findWalletIndex } from '@/lib/walletActions';
 import { checkRequestSigs, quorumContract, quorumVerifyLink, slotLabels, encodeQuorumRequest, type QuorumVerifyRequest } from '@/lib/quorumShare';
+import { quorumPowerCopy } from '@/lib/quorum';
 import { signQuorumSlot, demoQuorumSig, broadcastQuorumKeep, broadcastQuorumBreak } from '@/lib/quorumActions';
 
 type Done = { txid: string; kind: 'kept' | 'broken' };
@@ -47,6 +48,7 @@ export function VerifyQuorum({ initial }: { initial: QuorumVerifyRequest }) {
   const m = p.threshold;
   const n = p.verifiers.length;
   const labels = slotLabels(p, demo.pubkey);
+  const power = quorumPowerCopy(m, n, 'verifier');
   const verifyBy = verifyByHeight(p.deadline);
   const deadlineMs = chain ? chain.at + (p.deadline - chain.height) * BLOCK_SECONDS * 1000 : (p.deadlineAt ?? 0);
   const verifyByMs = deadlineMs ? deadlineMs - (p.deadline - verifyBy) * BLOCK_SECONDS * 1000 : 0;
@@ -94,7 +96,7 @@ export function VerifyQuorum({ initial }: { initial: QuorumVerifyRequest }) {
   const lede = done
     ? done.kind === 'kept' ? `${m} of ${n} verifiers approved. The refund has been sent.` : `${m} of ${n} verifiers ruled it broken. The stake has been sent to ${beneName}.`
     : settled ? 'The stake has already left this contract, so there’s nothing left to sign.'
-    : `Any ${m} of the ${n} verifiers below must sign for your friend to get the stake back. Signatures are added one by one; the link carries them.`;
+    : `This is a ${m}-of-${n} pledge. Any ${m} of the ${n} verifiers below must sign for your friend to get the stake back, and any ${m} of them can instead force a break that pays ${beneName}. Signatures are added one by one; the link carries them.`;
 
   return (
     <>
@@ -123,22 +125,53 @@ export function VerifyQuorum({ initial }: { initial: QuorumVerifyRequest }) {
           beneficiary={p.beneficiaryName ?? 'Beneficiary'}
           beneficiaryAddr={shortAddr(p.beneficiaryAddress)}
           keepCopy={`The ${stake} returns to your friend once ${m} of ${n} verifiers sign. Their own signature is already in this link.`}
-          breakCopy={`${m} of ${n} verifiers can rule it broken: the stake goes to ${beneName}. After the deadline anyone can settle it there.`}
+          breakCopy={`Any ${m} of ${n} verifiers can force a break: the stake goes to ${beneName}.${m === 1 ? ' A single verifier is enough.' : ''} After the deadline anyone can settle it there.`}
         />
 
         <aside className="sticky-aside">
           <div className="panel">
-            <h2>Verifiers</h2>
-            <dl className="kv" data-testid="quorum-signers">
-              {labels.map((l) => (
-                <div className="kv-row" key={l.slot}>
-                  <dt>{l.name}{mySlots.some((s) => s.slot === l.slot) ? ' (you)' : ''}</dt>
-                  <dd>
-                    {st.keepSigs[l.slot] ? <span className="badge">Approved</span> : st.breakSigs[l.slot] ? <span className="badge badge-bad">Voted broken</span> : <span className="badge badge-wait">Not yet</span>}
-                  </dd>
-                </div>
-              ))}
-            </dl>
+            <h2>
+              Verifiers <span className="badge" data-testid="quorum-shape">{m} of {n}</span>
+            </h2>
+            <p className="hint" style={{ margin: '4px 0 10px' }}>
+              {power.summary} Check the keys below before you sign: these are the only keys whose signatures count.
+            </p>
+            {power.warning && (
+              <p className="callout callout-warn" role="note" data-testid="quorum-1ofn-warning" style={{ marginBottom: 10 }}>
+                {power.warning}
+              </p>
+            )}
+            <ol style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 8 }} data-testid="quorum-signers">
+              {labels.map((l) => {
+                const mine = mySlots.some((s) => s.slot === l.slot);
+                return (
+                  <li
+                    key={l.slot}
+                    data-testid={`quorum-signer-${l.slot}`}
+                    data-mine={mine || undefined}
+                    data-demo={l.isDemo || undefined}
+                    style={{
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      border: mine ? '2px solid var(--keep, #1f7a4d)' : '1px solid var(--line, #e3e3e3)',
+                      background: mine ? 'var(--keep-tint, #eaf6ef)' : undefined,
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span>
+                        <b>{l.name}</b>
+                        {l.isDemo && <span className="badge badge-off" style={{ marginLeft: 6 }}>Demo verifier · run by Vouch</span>}
+                        {mine && <span className="badge" style={{ marginLeft: 6 }}>Your key</span>}
+                      </span>
+                      {st.keepSigs[l.slot] ? <span className="badge">Approved</span> : st.breakSigs[l.slot] ? <span className="badge badge-bad">Voted broken</span> : <span className="badge badge-wait">Not yet</span>}
+                    </div>
+                    <code className="addr" style={{ display: 'block', marginTop: 4, wordBreak: 'break-all', fontSize: 12 }} title={`Verifier ${l.slot + 1} public key`}>
+                      {l.pubkey}
+                    </code>
+                  </li>
+                );
+              })}
+            </ol>
             {!st.stakerSigOk && <p className="error-text">The staker’s signature in this link is invalid. Ask them for a fresh link.</p>}
             {st.dropped.length > 0 && <p className="error-text">{st.dropped.length} signature(s) in this link didn’t check out and were ignored.</p>}
 

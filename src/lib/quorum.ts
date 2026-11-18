@@ -61,19 +61,47 @@ export interface QuorumParams {
   maxFee?: bigint;
 }
 
-/** Problems with the quorum shape itself (UI shows them; createQuorumContract refuses them). */
-export function quorumShapeIssues(stakerHex: string, verifierHexes: string[], threshold: number): string[] {
+/** Message used everywhere a verifier key repeats one already in the pledge (another verifier or the staker). */
+export const DUPLICATE_VERIFIER = 'The same key is listed twice: each verifier can only count once';
+export const STAKER_AS_VERIFIER = 'Your own key is listed as a verifier: you can’t vouch for yourself';
+
+/**
+ * Problems with the quorum shape itself. Shared by create, the /verify page and the server, so all
+ * three refuse the same pledges:
+ * - 1..5 verifiers, each a compressed pubkey, none of them a reserved padding key;
+ * - M is an integer between 1 and the number of real verifiers (padding slots never count);
+ * - no key twice, and the staker's key in no slot (treated as a duplicate of the staker).
+ */
+export function quorumShapeIssues(stakerHex: string, verifierHexes: string[], threshold: unknown): string[] {
   const issues: string[] = [];
-  const keys = verifierHexes.map((k) => k.toLowerCase());
+  const keys = verifierHexes.map((k) => String(k ?? '').toLowerCase());
+  const staker = String(stakerHex ?? '').toLowerCase();
+  const real = keys.filter((k) => !UNUSED_SLOT_KEYS.includes(k));
   if (keys.length < 1 || keys.length > MAX_VERIFIERS) issues.push(`Add between 1 and ${MAX_VERIFIERS} verifiers`);
-  if (!Number.isInteger(threshold) || threshold < 1 || threshold > keys.length) {
-    issues.push(`The approvals needed must be between 1 and ${Math.max(1, keys.length)}`);
+  if (typeof threshold !== 'number' || !Number.isInteger(threshold) || threshold < 1 || threshold > real.length) {
+    issues.push(`The approvals needed must be between 1 and ${Math.max(1, real.length)} (the number of verifiers)`);
   }
   if (keys.some((k) => !/^0[23][0-9a-f]{64}$/.test(k))) issues.push('Every verifier needs a 33-byte compressed public key');
-  if (new Set(keys).size !== keys.length) issues.push('The same verifier key is listed twice: each verifier can only count once');
-  if (keys.includes(stakerHex.toLowerCase())) issues.push('You can’t be one of your own verifiers');
-  if (keys.some((k) => UNUSED_SLOT_KEYS.includes(k))) issues.push('That key is reserved');
+  if (new Set(keys).size !== keys.length) issues.push(DUPLICATE_VERIFIER);
+  if (staker && keys.includes(staker)) issues.push(STAKER_AS_VERIFIER);
+  if (real.length !== keys.length) issues.push('That key is reserved');
   return issues;
+}
+
+/** What M of N lets the verifiers do, for the create and verify copy. M approve OR M force a break. */
+export function quorumPowerCopy(m: number, n: number, reader: 'staker' | 'verifier' = 'staker'): { summary: string; warning: string | null } {
+  const refund = reader === 'staker' ? 'your refund' : 'the staker’s refund';
+  const summary =
+    n === 1
+      ? `The one verifier can approve ${refund}, and can also force a break that sends the stake to the beneficiary.`
+      : `Any ${m} of the ${n} verifiers can approve ${refund}, and any ${m} of them can also force a break that sends the stake to the beneficiary.`;
+  const warning =
+    m !== 1
+      ? null
+      : n === 1
+        ? 'With 1 of 1, that one verifier can rule it broken on their own and send the stake to the beneficiary.'
+        : `With 1 of ${n}, any single verifier can rule it broken on their own and send the stake to the beneficiary, even if ${n === 2 ? 'the other one disagrees' : `the other ${n - 1} disagree`}.`;
+  return { summary, warning };
 }
 
 /** The five constructor slot keys: the real verifiers, then unspendable padding. */

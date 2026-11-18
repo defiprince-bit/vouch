@@ -59,7 +59,7 @@ function parseTerms(t: unknown): PledgeTerms {
   if ((p.deadline as number) >= LOCKTIME_THRESHOLD) throw new VerifierError('Bad deadline: must be a block height, not a clock time');
   if (p.version === 2) {
     if (!Array.isArray(p.verifierPubkeys) || !hex33.test(p.stakerPubkey ?? '')) throw new VerifierError('Bad pubkeys');
-    const issues = quorumShapeIssues(p.stakerPubkey!, p.verifierPubkeys.map(String), Number(p.threshold));
+    const issues = quorumShapeIssues(p.stakerPubkey!, p.verifierPubkeys.map(String), p.threshold);
     if (issues.length) throw new VerifierError(issues[0]);
     p.verifierPubkey = p.verifierPubkeys[0];
   } else if (p.version !== undefined && (p.version as number) !== 1) {

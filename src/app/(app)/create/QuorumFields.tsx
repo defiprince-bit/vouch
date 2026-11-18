@@ -2,7 +2,7 @@
 // Create form: a group of 1..5 verifiers (friends' keys, plus the demo verifier where allowed)
 // and how many of them must approve (M of N).
 import Link from 'next/link';
-import { MAX_VERIFIERS, looksLikeAddress } from '@/lib/quorum';
+import { MAX_VERIFIERS, looksLikeAddress, quorumPowerCopy } from '@/lib/quorum';
 
 export interface VerifierRow {
   name: string;
@@ -25,18 +25,36 @@ export function QuorumFields(props: {
   demoAvailable: boolean;
   threshold: number;
   setThreshold: (n: number) => void;
+  /** The staker's own key (wallet or pasted), so a row holding it is flagged like a duplicate. */
+  stakerHex?: string;
+  /** The demo verifier's key when it's included, so a row repeating it is flagged too. */
+  demoPubkey?: string | null;
 }) {
-  const { rows, setRows, includeDemo, setIncludeDemo, demoAvailable, threshold, setThreshold } = props;
-  const n = rows.length + (includeDemo && demoAvailable ? 1 : 0);
+  const { rows, setRows, includeDemo, setIncludeDemo, demoAvailable, threshold, setThreshold, stakerHex, demoPubkey } = props;
+  const demoOn = includeDemo && demoAvailable;
   const keys = rows.map((r) => r.key.trim().toLowerCase()).filter(Boolean);
-  const dupes = new Set(keys.filter((k, i) => keys.indexOf(k) !== i));
-  const maxRows = MAX_VERIFIERS - (includeDemo && demoAvailable ? 1 : 0);
+  const taken = [...(demoOn && demoPubkey ? [demoPubkey.toLowerCase()] : []), ...keys];
+  const dupes = new Set(taken.filter((k, i) => taken.indexOf(k) !== i));
+  const staker = stakerHex?.trim().toLowerCase() || null;
+  // M can only count real verifiers: rows with a usable key, plus the demo verifier if included.
+  // Distinct, valid, non-staker keys only: a flagged row never counts toward N.
+  const realKeys = new Set(rows.map((r) => r.key.trim().toLowerCase()).filter((k) => k && !rowKeyError(k) && k !== staker));
+  if (demoOn && demoPubkey) realKeys.add(demoPubkey.toLowerCase());
+  const n = realKeys.size + (demoOn && !demoPubkey ? 1 : 0);
+  const mTooBig = threshold > Math.max(1, n);
+  const showMError = mTooBig && n > 0; // don't nag before any key is entered
+  const power = quorumPowerCopy(Math.min(threshold, Math.max(1, n)), Math.max(1, n));
+  const maxRows = MAX_VERIFIERS - (demoOn ? 1 : 0);
   const update = (i: number, patch: Partial<VerifierRow>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
   return (
     <div style={{ marginTop: 12, display: 'grid', gap: 12 }} data-testid="quorum-fields">
       {rows.map((r, i) => {
-        const err = rowKeyError(r.key) ?? (dupes.has(r.key.trim().toLowerCase()) ? 'This key is already in the list: each verifier counts once.' : null);
+        const k = r.key.trim().toLowerCase();
+        const err =
+          rowKeyError(r.key) ??
+          (k && staker === k ? 'That’s your own key. You can’t vouch for yourself: each verifier counts once, and you already sign as the staker.' : null) ??
+          (dupes.has(k) ? 'This key is already in the list: each verifier counts once.' : null);
         return (
           <div className="field-row" key={i}>
             <div className="field">
@@ -74,19 +92,34 @@ export function QuorumFields(props: {
           </label>
         )}
       </div>
-      <div className="field" style={{ maxWidth: 320 }}>
-        <label htmlFor="threshold">Approvals needed</label>
-        <select id="threshold" value={Math.min(threshold, Math.max(1, n))} onChange={(e) => setThreshold(Number(e.target.value))}>
+      <div className={`field${showMError ? ' is-invalid' : ''}`} style={{ maxWidth: 420 }}>
+        <label htmlFor="threshold">Approvals needed (M of N)</label>
+        <select id="threshold" value={threshold} onChange={(e) => setThreshold(Number(e.target.value))} aria-invalid={showMError} data-testid="threshold">
           {Array.from({ length: Math.max(1, n) }, (_, i) => i + 1).map((m) => (
             <option key={m} value={m}>
               {m} of {Math.max(1, n)}
             </option>
           ))}
+          {mTooBig && (
+            <option value={threshold} disabled>
+              {threshold} of {n} (not enough verifiers)
+            </option>
+          )}
         </select>
-        <p className="hint">
-          Your refund needs {Math.min(threshold, Math.max(1, n))} of the {n} to sign, in any order. The same number can also rule it broken. Each friend gets their key from{' '}
-          <Link href="/verifier-key">/verifier-key</Link>; none of them may be the beneficiary.
+        {showMError && (
+          <p className="field-error" role="alert">
+            {threshold} approvals needs at least {threshold} verifiers; you have {n}. Add a verifier or lower the number.
+          </p>
+        )}
+        <p className="hint" data-testid="quorum-power">
+          {n > 0 && !showMError ? power.summary : 'The same number of verifiers that can approve your refund can also force a break that pays the beneficiary.'} Signatures can come in any order. Each friend gets their key from <Link href="/verifier-key">/verifier-key</Link>; none of them may be
+          the beneficiary.
         </p>
+        {n > 0 && !showMError && power.warning && (
+          <p className="callout callout-warn" role="note" data-testid="quorum-1ofn-warning" style={{ marginTop: 8 }}>
+            {power.warning}
+          </p>
+        )}
       </div>
     </div>
   );

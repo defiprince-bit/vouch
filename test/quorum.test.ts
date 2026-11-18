@@ -108,7 +108,7 @@ describe('VouchQuorum artifact', () => {
     expect(quorumShapeIssues(binToHex(staker.pub), [vh], 0)).not.toHaveLength(0);
     expect(quorumShapeIssues(binToHex(staker.pub), [vh], 2)).not.toHaveLength(0);
     expect(quorumShapeIssues(binToHex(staker.pub), [vh, vh], 1).join(' ')).toMatch(/twice/);
-    expect(quorumShapeIssues(binToHex(staker.pub), [binToHex(staker.pub)], 1).join(' ')).toMatch(/own verifiers/);
+    expect(quorumShapeIssues(binToHex(staker.pub), [binToHex(staker.pub)], 1).join(' ')).toMatch(/vouch for yourself/);
     expect(quorumShapeIssues(binToHex(staker.pub), Array.from({ length: 6 }, () => binToHex(makeKey().pub)), 1)).not.toHaveLength(0);
     expect(() =>
       createQuorumContract({ stakerPubkey: staker.pub, verifierPubkeys: [v.pub, v.pub], threshold: 1, beneficiaryAddress: beneficiary.address, deadline: DEADLINE, pledgeId: newPledgeId() }, provider),

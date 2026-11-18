@@ -162,12 +162,18 @@ export function mergeRequests(r: QuorumVerifyRequest, other: QuorumVerifyRequest
 
 /** Verifier list for display: name, whether they approved / voted break. */
 export function slotLabels(p: Pick<QuorumTerms, 'verifiers'>, demoPubkey?: string | null) {
-  return p.verifiers.map((v, i) => ({
-    slot: i,
-    pubkey: v.pubkey,
-    isDemo: !!demoPubkey && v.pubkey.toLowerCase() === demoPubkey.toLowerCase(),
-    name: v.name?.trim() || (demoPubkey && v.pubkey.toLowerCase() === demoPubkey.toLowerCase() ? 'Vouch demo verifier' : `Verifier ${i + 1}`),
-  }));
+  return p.verifiers.map((v, i) => {
+    // "Demo" is decided by the key alone: names come from the link, so a name can't claim it.
+    const isDemo = !!demoPubkey && v.pubkey.toLowerCase() === demoPubkey.toLowerCase();
+    const given = v.name?.trim();
+    const spoof = !isDemo && !!given && /vouch\s*demo/i.test(given);
+    return {
+      slot: i,
+      pubkey: v.pubkey.toLowerCase(),
+      isDemo,
+      name: isDemo ? 'Vouch demo verifier' : spoof ? `${given} (not the Vouch demo key)` : given || `Verifier ${i + 1}`,
+    };
+  });
 }
 
 export const sigHex = (s: Uint8Array) => binToHex(s);
