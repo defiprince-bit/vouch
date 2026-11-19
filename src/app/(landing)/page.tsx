@@ -97,11 +97,11 @@ export default function Landing() {
                   <div className="ticket-grid">
                     <div><p className="field-label">Stake</p><p className="field-value">0.05 BCH</p></div>
                     <div><p className="field-label">Deadline</p><p className="field-value">27 Nov 2026, 23:59 WAT</p></div>
-                    <div><p className="field-label">Verifier</p><p className="field-value">Vouch demo</p></div>
+                    <div><p className="field-label">Verifiers</p><p className="field-value">2 of 3 friends</p><p className="addr">Amaka · Tunde · Ife</p></div>
                     <div><p className="field-label">Beneficiary</p><p className="field-value">Chidi</p><p className="addr">bitcoincash:p…</p></div>
                   </div>
                   <div className="ticket-outcomes">
-                    <p className="outcome"><b>If you keep it</b> Coins return to you once you and the verifier sign.</p>
+                    <p className="outcome"><b>If you keep it</b> Coins return to you once you and any 2 of your 3 verifiers sign.</p>
                     <p className="outcome is-forfeit"><b>If you don’t</b> The 0.05 BCH is paid to Chidi. Same if time runs out.</p>
                   </div>
                 </div>

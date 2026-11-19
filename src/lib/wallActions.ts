@@ -1,32 +1,38 @@
 'use client';
-// Client side of "List on the wall": the same staker-proof request a verify link carries (the
-// staker's pre-signature over the keep tx for the locked UTXO), posted to /api/wall. The server
-// rebuilds the contract, checks the lock on chain and the signature, then stores the terms only.
-import type { DappConnectionManager } from '@wizardconnect/dapp';
+// Client side of "List on the wall". The proof is the pledge's listSecret, which only the
+// creating browser holds (src/lib/listSecret.ts); no wallet signature is involved. The server
+// rebuilds the contract, checks that sha256(secret) + nonce + habit rebuild the pledge id the
+// contract commits to, and checks the lock on chain.
 import type { StoredPledge } from './pledges';
 import { savePledge } from './pledges';
-import { prepareVerifyRequest } from './walletActions';
-import { prepareQuorumRequest } from './quorumActions';
-import { encodeVerifyRequest } from './share';
-import { encodeQuorumRequest } from './quorumShare';
+import { secretMatchesPledge } from './listSecret';
 
 export type ListResult = { ok: true; listedAt: number } | { ok: false; error: string; status?: number };
 
-export async function listOnWall(manager: DappConnectionManager, p: StoredPledge): Promise<ListResult> {
-  let link: string;
-  try {
-    link = p.version === 2 ? encodeQuorumRequest(await prepareQuorumRequest(manager, p)) : encodeVerifyRequest(await prepareVerifyRequest(manager, p));
-  } catch (e) {
-    return { ok: false, error: (e as Error).message || 'The wallet didn’t sign' };
-  }
+/** Can this browser list `p`? It must hold the secret and nonce the pledge id commits to. */
+export const canListHere = (p: StoredPledge) => secretMatchesPledge(p.listSecret, p.listNonce, p.promise, p.id);
+
+export const LIST_ELSEWHERE_COPY =
+  'Only the browser that created a pledge can list it. This one doesn’t hold its listing key (the pledge was made on another device, or before the wall existed).';
+
+/** Terms only: what the server needs to rebuild the contract. */
+export function wallTerms(p: StoredPledge) {
+  const base = { id: p.id, deadline: p.deadline, beneficiaryAddress: p.beneficiaryAddress, stakerPubkey: p.stakerPubkey, network: p.network, contractAddress: p.contractAddress };
+  return p.version === 2
+    ? { ...base, version: 2 as const, verifierPubkeys: p.verifiers!.map((v) => v.pubkey), threshold: p.threshold! }
+    : { ...base, verifierPubkey: p.verifierPubkey };
+}
+
+export async function listOnWall(p: StoredPledge): Promise<ListResult> {
+  if (!canListHere(p)) return { ok: false, error: LIST_ELSEWHERE_COPY, status: 403 };
   const res = await fetch('/api/wall', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ link, habit: p.promise }),
+    body: JSON.stringify({ pledge: wallTerms(p), listSecret: p.listSecret, listNonce: p.listNonce, habit: p.promise }),
   }).catch(() => null);
   if (!res) return { ok: false, error: 'Couldn’t reach Vouch. Try again.' };
   const json = (await res.json().catch(() => ({}))) as { error?: string };
-  // 409 "already listed" counts as listed.
+  // "already on the wall" counts as listed.
   if (res.ok || (res.status === 409 && /is already on the wall/i.test(json.error ?? ''))) {
     const listedAt = Date.now();
     savePledge({ ...p, visibility: 'public', listedAt });

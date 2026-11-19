@@ -18,7 +18,7 @@ import { prepareQuorumRequest, progressOf } from '@/lib/quorumActions';
 import { useDemoVerifier } from '@/lib/useDemoVerifier';
 import { QuorumPanel } from './QuorumPanel';
 import { useNow } from '@/lib/useNow';
-import { listOnWall } from '@/lib/wallActions';
+import { listOnWall, canListHere, LIST_ELSEWHERE_COPY } from '@/lib/wallActions';
 
 type Chain = { kind: 'loading' } | { kind: 'error'; msg: string } | { kind: 'ok'; sats: bigint; height: number; at: number };
 type Phase = 'loading' | 'offline' | 'unfunded' | 'active' | 'expired' | 'closed';
@@ -132,10 +132,9 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
   const [wallBusy, setWallBusy] = useState(false);
   const [wallErr, setWallErr] = useState<string | null>(null);
   async function listHere() {
-    if (!wallet.manager) return;
     setWallBusy(true);
     setWallErr(null);
-    const res = await listOnWall(wallet.manager, pledge);
+    const res = await listOnWall(pledge);
     setWallBusy(false);
     if (!res.ok) setWallErr(`Not listed: ${res.error}`);
   }
@@ -562,13 +561,18 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
                   ) : (
                     <>
                       Unlisted
-                      {mine && locked > 0n && (
+                      {locked > 0n && canListHere(pledge) && (
                         <>
                           {' · '}
                           <button className="link-btn" type="button" disabled={wallBusy} onClick={() => void listHere()} data-testid="list-on-wall">
-                            {wallBusy ? 'Listing… approve in your wallet' : 'List on the wall'}
+                            {wallBusy ? 'Listing…' : 'List on the wall'}
                           </button>
                         </>
+                      )}
+                      {!canListHere(pledge) && (
+                        <span className="footnote" style={{ display: 'block' }} data-testid="list-elsewhere">
+                          {LIST_ELSEWHERE_COPY}
+                        </span>
                       )}
                       {wallErr && <span className="field-error" style={{ display: 'block' }} role="alert">{wallErr}</span>}
                     </>

@@ -1498,3 +1498,6 @@ body.is-shot .state-switcher { display: none !important; }
 .link-btn { background: none; border: 0; padding: 0; font: inherit; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .link-btn:disabled { color: var(--ink-muted); cursor: progress; text-decoration: none; }
 .wall-list-row { margin: 4px 0 18px; }
+
+/* Kept cards: the "Refunded" line in deep mint, matching the Kept stamp (Paid stays rust). */
+.wall-card[data-state="kept"] .example-tag { color: var(--mint-deep); }

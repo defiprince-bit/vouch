@@ -1,13 +1,17 @@
-// Public wall: listing validation (staker-proof, on-chain lock, address + network checks, spam
+// Public wall: listing validation (listSecret proof, on-chain lock, address + network checks, spam
 // guards) and state derivation from the chain.
 import { describe, it, expect, beforeEach } from 'vitest';
 import { MockNetworkProvider, SignatureTemplate, randomUtxo, placeholderSignature } from 'cashscript';
 import { secp256k1, generatePrivateKey, encodeCashAddress, CashAddressType, hash160, binToHex, hexToBin } from '@bitauth/libauth';
 import { createPledgeContract, buildKeep, buildForfeit, buildBreakByVerifier, stakerP2pkhAddress, newPledgeId, DEFAULT_FEE } from '@/lib/vouch';
 import { toWcSignRequest, keepSignaturesFromTx, DUMMY_SIGNATURE } from '@/lib/wc';
-import { encodeVerifyRequest, type VerifyRequest } from '@/lib/share';
+import { encodeVerifyRequest, verifyLink, type VerifyRequest } from '@/lib/share';
+import { newListSecret, newListNonce, listPledgeId, listSecretHash, secretMatchesPledge } from '@/lib/listSecret';
+import { wallTerms, canListHere } from '@/lib/wallActions';
+import { quorumTerms } from '@/lib/quorumActions';
+import type { StoredPledge } from '@/lib/pledges';
 import { buildQuorumKeep, buildQuorumBreakByVerifier, quorumSigsFromTx, QUORUM_FEE } from '@/lib/quorum';
-import { quorumContract, requestSpends, encodeQuorumRequest, type QuorumTerms, type QuorumVerifyRequest } from '@/lib/quorumShare';
+import { quorumContract, requestSpends, encodeQuorumRequest, quorumVerifyLink, decodeAnyVerifyRequest, type QuorumTerms, type QuorumVerifyRequest } from '@/lib/quorumShare';
 import { cleanHabit, statsOf, shortAddress, HABIT_MAX, defaultVisibility, VISIBILITY_COPY } from '@/lib/wall';
 import { listPledge, readWall, LIST_LIMITS, _test } from '@/server/wall';
 import { MemoryWallStore, type ListingRow } from '@/server/wallStore';
@@ -23,7 +27,6 @@ function makeKey() {
   const address = encodeCashAddress({ prefix: 'bchtest', type: CashAddressType.p2pkh, payload: hash160(pub) }).address;
   return { priv, pub, hex: binToHex(pub), address, sig: new SignatureTemplate(priv) };
 }
-type Key = ReturnType<typeof makeKey>;
 
 const DEADLINE = 1000;
 const STAKE = 20_000n;
@@ -61,27 +64,49 @@ beforeEach(() => {
 
 // --- pledge builders (what the browser does) -----------------------------------------------------
 
-function v1Pledge(opts: { lock?: boolean; who?: Key } = {}) {
-  const id = newPledgeId();
+/** A fresh listSecret + nonce and the pledge id that commits to them (what the create form does). */
+function commitment(habit: string) {
+  const listSecret = newListSecret();
+  const listNonce = newListNonce();
+  return { listSecret, listNonce, id: listPledgeId(listNonce, habit, listSecretHash(listSecret)) };
+}
+
+const HABIT = 'Run 5k every Saturday';
+
+function v1Pledge(opts: { lock?: boolean; habit?: string } = {}) {
+  const habit = opts.habit ?? HABIT;
+  const { listSecret, listNonce, id } = commitment(habit);
   const contract = createPledgeContract({ stakerPubkey: staker.pub, verifierPubkey: verifier.pub, beneficiaryAddress: beneficiary.address, deadline: DEADLINE, pledgeId: id }, provider);
   const utxo = opts.lock === false ? { ...randomUtxo({ satoshis: STAKE }) } : provider.addUtxo(contract.address, randomUtxo({ satoshis: STAKE }));
-  const builder = buildKeep({ contract, provider, utxo: { ...utxo, lockingBytecode: contract.lockingBytecode } as never, stakerSig: placeholderSignature(), verifierSig: DUMMY_SIGNATURE, stakerAddress: stakerP2pkhAddress(staker.pub, 'chipnet') });
-  const req = toWcSignRequest(builder, [[0, 'receive', 0]], { broadcast: false, userPrompt: 'list' });
-  const { stakerSig } = keepSignaturesFromTx(mockWalletSign(req, { 'receive/0': (opts.who ?? staker).priv }));
+  const stored: StoredPledge = {
+    id, promise: habit, stakeSats: STAKE.toString(), deadline: DEADLINE, beneficiaryAddress: beneficiary.address, stakerPubkey: staker.hex,
+    verifierPubkey: verifier.hex, verifierKind: 'friend', contractAddress: contract.address, network: 'chipnet', createdAt: 1, visibility: 'unlisted', listSecret, listNonce,
+  };
+  return { stored, listSecret, listNonce, contract, utxo, body: { pledge: wallTerms(stored), listSecret, listNonce, habit } };
+}
+
+/** The verify link the staker shares for a v1 pledge, with their real keep pre-signature. */
+function verifyLinkFor(p: ReturnType<typeof v1Pledge>) {
+  const builder = buildKeep({ contract: p.contract, provider, utxo: { ...p.utxo, lockingBytecode: p.contract.lockingBytecode } as never, stakerSig: placeholderSignature(), verifierSig: DUMMY_SIGNATURE, stakerAddress: stakerP2pkhAddress(staker.pub, 'chipnet') });
+  const req = toWcSignRequest(builder, [[0, 'receive', 0]], { broadcast: false, userPrompt: 'pre-sign' });
+  const { stakerSig } = keepSignaturesFromTx(mockWalletSign(req, { 'receive/0': staker.priv }));
+  const s = p.stored;
   const r: VerifyRequest = {
     v: 1,
-    pledge: { id, promise: 'Run 5k', stakeSats: STAKE.toString(), deadline: DEADLINE, beneficiaryAddress: beneficiary.address, stakerPubkey: staker.hex, verifierPubkey: verifier.hex, contractAddress: contract.address, network: 'chipnet' },
-    utxo: { txid: utxo.txid, vout: utxo.vout, satoshis: utxo.satoshis.toString() },
+    pledge: { id: s.id, promise: s.promise, stakeSats: s.stakeSats, deadline: s.deadline, beneficiaryAddress: s.beneficiaryAddress, stakerPubkey: s.stakerPubkey, verifierPubkey: s.verifierPubkey, contractAddress: s.contractAddress, network: s.network },
+    utxo: { txid: p.utxo.txid, vout: p.utxo.vout, satoshis: p.utxo.satoshis.toString() },
     fee: DEFAULT_FEE.toString(),
     stakerSig: binToHex(stakerSig),
   };
-  return { r, contract, utxo, link: `#pledge=${encodeVerifyRequest(r)}` };
+  return { r, url: verifyLink('https://vouch.example', r) };
 }
 
 function v2Pledge() {
+  const habit = 'Write 500 words';
+  const { listSecret, listNonce, id } = commitment(habit);
   const t = {
-    id: newPledgeId(),
-    promise: 'Write 500 words',
+    id,
+    promise: habit,
     stakeSats: STAKE.toString(),
     deadline: DEADLINE,
     beneficiaryAddress: beneficiary.address,
@@ -94,15 +119,21 @@ function v2Pledge() {
   const terms: QuorumTerms = { ...t, contractAddress: quorumContract(t, provider).address };
   const c = quorumContract(terms, provider);
   const utxo = provider.addUtxo(c.address, randomUtxo({ satoshis: STAKE }));
-  const base: QuorumVerifyRequest = { v: 2, pledge: terms, utxo: { txid: utxo.txid, vout: utxo.vout, satoshis: utxo.satoshis.toString() }, fee: QUORUM_FEE.toString(), stakerSig: '', keepSigs: [null, null, null], breakSigs: [null, null, null] };
+  const stored: StoredPledge = {
+    id, promise: habit, stakeSats: t.stakeSats, deadline: DEADLINE, beneficiaryAddress: beneficiary.address, stakerPubkey: staker.hex, verifierPubkey: vs[0].hex,
+    version: 2, verifiers: t.verifiers, threshold: 2, contractAddress: terms.contractAddress, network: 'chipnet', createdAt: 1, listSecret, listNonce,
+  };
+  const base: QuorumVerifyRequest = { v: 2, pledge: quorumTerms(stored), utxo: { txid: utxo.txid, vout: utxo.vout, satoshis: utxo.satoshis.toString() }, fee: QUORUM_FEE.toString(), stakerSig: '', keepSigs: [null, null, null], breakSigs: [null, null, null] };
   const s = requestSpends(base, provider);
-  const req = toWcSignRequest(buildQuorumKeep({ ...s, stakerSig: placeholderSignature(), verifierSigs: [] }), [[0, 'receive', 0]], { broadcast: false, userPrompt: 'list' });
+  const req = toWcSignRequest(buildQuorumKeep({ ...s, stakerSig: placeholderSignature(), verifierSigs: [] }), [[0, 'receive', 0]], { broadcast: false, userPrompt: 'pre-sign' });
   const stakerSig = quorumSigsFromTx(mockWalletSign(req, { 'receive/0': staker.priv }), 'keep').stakerSig!;
   const r = { ...base, stakerSig: binToHex(stakerSig) };
-  return { r, contract: c, utxo, link: `#pledge=${encodeQuorumRequest(r)}` };
+  return { r, stored, listSecret, listNonce, contract: c, utxo, body: { pledge: wallTerms(stored), listSecret, listNonce, habit }, url: quorumVerifyLink('https://vouch.example', r) };
 }
 
-const list = (link: string, habit: unknown = 'Run 5k every Saturday', ip = '1.2.3.4') => listPledge({ link, habit, ip }, deps());
+type Body = { pledge: unknown; listSecret: unknown; listNonce: unknown; habit: unknown };
+const list = (body: Body, ip = '1.2.3.4') => listPledge({ ...body, ip }, deps());
+const withTerms = (body: Body, patch: Record<string, unknown>) => ({ ...body, pledge: { ...(body.pledge as object), ...patch } });
 const err = async (p: Promise<unknown>) => {
   const e = await p.then(() => null, (x) => x);
   expect(e, 'expected a refusal').toBeInstanceOf(VerifierError);
@@ -112,97 +143,172 @@ const err = async (p: Promise<unknown>) => {
 // --- listing -------------------------------------------------------------------------------------
 
 describe('listing (POST /api/wall)', () => {
-  it('lists a locked v1 pledge with the staker’s proof, and refuses the same pledge twice', async () => {
-    const { link, contract } = v1Pledge();
-    const res = await list(link);
-    expect(res.contractAddress).toBe(contract.address);
+  it('a correct secret is accepted (v1); stores sha256(secret), never the secret; refuses it twice', async () => {
+    const p = v1Pledge();
+    const res = await list(p.body);
+    expect(res.contractAddress).toBe(p.contract.address);
     expect(store.rows).toHaveLength(1);
-    expect(store.rows[0]).toMatchObject({ habit: 'Run 5k every Saturday', network: 'chipnet', version: 1, stakerPubkey: staker.hex, state: 'active', legacy: false, hidden: false });
-    // only what's needed to rebuild the contract is stored: no signature, no names
-    expect(store.rows[0].termsJson).not.toMatch(/stakerSig|promise|beneficiaryName/);
-    expect((await err(list(link))).status).toBe(409);
+    expect(store.rows[0]).toMatchObject({ habit: HABIT, network: 'chipnet', version: 1, stakerPubkey: staker.hex, state: 'active', legacy: false, hidden: false });
+    expect(store.rows[0].listSecretHash).toBe(listSecretHash(p.listSecret));
+    expect(JSON.stringify(store.rows[0])).not.toContain(p.listSecret);
+    expect(store.rows[0].termsJson).not.toMatch(/stakerSig|promise|beneficiaryName|listSecret|listNonce/);
+    expect((await err(list(p.body))).status).toBe(409);
   });
 
-  it('lists a locked v2 (quorum) pledge', async () => {
-    const { link } = v2Pledge();
-    await list(link);
-    expect(store.rows[0]).toMatchObject({ version: 2 });
+  it('a correct secret is accepted (v2 quorum)', async () => {
+    await list(v2Pledge().body);
+    expect(store.rows[0]).toMatchObject({ version: 2, habit: 'Write 500 words' });
     expect(JSON.parse(store.rows[0].termsJson)).toMatchObject({ version: 2, threshold: 2 });
+  });
+
+  it('a verify-link holder can’t list: terms, UTXO and the staker’s keep pre-signature are no proof', async () => {
+    const p1 = v1Pledge();
+    const p2 = v2Pledge();
+    const links = [
+      { r: verifyLinkFor(p1).r as VerifyRequest | QuorumVerifyRequest, terms: p1.body.pledge },
+      { r: p2.r as VerifyRequest | QuorumVerifyRequest, terms: p2.body.pledge },
+    ];
+    let n = 0;
+    store.countAttempts = async () => 0; // many guesses here; the limits are tested below
+    for (const { r, terms } of links) {
+      // everything a link holder has: terms, habit, utxo, the signature; guesses for the secret
+      for (const listSecret of [undefined, '', r.stakerSig, r.stakerSig.slice(0, 64), r.pledge.id + r.pledge.id]) {
+        for (const listNonce of [undefined, r.pledge.id]) {
+          const e = await err(list({ pledge: { ...terms, stakerSig: r.stakerSig, utxo: r.utxo }, listSecret, listNonce, habit: r.pledge.promise }, `5.0.0.${n++}`));
+          expect(e.status).toBe(403);
+          expect(e.message).toMatch(/browser that created it/);
+        }
+      }
+      // the old request shape (the encoded verify link itself) is no proof either
+      const link = 'keepSigs' in r ? encodeQuorumRequest(r) : encodeVerifyRequest(r);
+      expect((await err(listPledge({ link, habit: r.pledge.promise, ip: '1.1.1.1' } as never, deps()))).message).toMatch(/Missing pledge/);
+    }
+    expect(store.rows).toHaveLength(0);
+  });
+
+  it('a verify-link holder can’t front-run with a secret of their own (registration order doesn’t matter)', async () => {
+    const p = v1Pledge();
+    const { r } = verifyLinkFor(p);
+    // The attacker lists first, with their own secret + nonce (and any habit they like).
+    const mine = { secret: newListSecret(), nonce: newListNonce() };
+    for (const habit of [r.pledge.promise, 'Totally different habit']) {
+      const e = await err(list({ pledge: p.body.pledge, listSecret: mine.secret, listNonce: mine.nonce, habit }));
+      expect(e.status).toBe(403);
+    }
+    // nothing got registered under the attacker's hash, so the real staker still lists fine
+    expect(store.rows).toHaveLength(0);
+    await list(p.body);
+    expect(store.rows[0].listSecretHash).toBe(listSecretHash(p.listSecret));
+    expect(store.rows[0].listSecretHash).not.toBe(listSecretHash(mine.secret));
+  });
+
+  it('a wrong secret is rejected, including one valid for another pledge, and a changed habit or nonce', async () => {
+    const a = v1Pledge();
+    const b = v1Pledge();
+    expect((await err(list({ ...a.body, listSecret: newListSecret() }))).status).toBe(403);
+    expect((await err(list({ ...a.body, listSecret: b.listSecret }))).status).toBe(403);
+    expect((await err(list({ ...a.body, listSecret: b.listSecret, listNonce: b.listNonce }))).status).toBe(403);
+    expect((await err(list({ ...a.body, listSecret: a.listSecret.toUpperCase() }))).status).toBe(403);
+    expect((await err(list({ ...a.body, listNonce: newListNonce() }))).status).toBe(403);
+    // the habit is committed too: the secret holder can't list it under a different habit
+    expect((await err(list({ ...a.body, habit: 'Something nicer-sounding' }))).status).toBe(403);
+    expect(store.rows).toHaveLength(0);
+    await list(a.body);
+    expect(store.rows).toHaveLength(1);
+  });
+
+  it('a pledge made before list secrets (random id) can’t be newly listed', async () => {
+    const id = newPledgeId();
+    const contract = createPledgeContract({ stakerPubkey: staker.pub, verifierPubkey: verifier.pub, beneficiaryAddress: beneficiary.address, deadline: DEADLINE, pledgeId: id }, provider);
+    provider.addUtxo(contract.address, randomUtxo({ satoshis: STAKE }));
+    const stored: StoredPledge = { ...v1Pledge().stored, id, contractAddress: contract.address, listSecret: undefined, listNonce: undefined };
+    expect(canListHere(stored)).toBe(false);
+    expect((await err(list({ pledge: wallTerms(stored), listSecret: newListSecret(), listNonce: newListNonce(), habit: HABIT }))).status).toBe(403);
   });
 
   it('rejects an address mismatch: terms that rebuild to a different contract', async () => {
     const a = v1Pledge();
     const b = v1Pledge();
-    const swapped = { ...a.r, pledge: { ...a.r.pledge, contractAddress: b.contract.address } };
-    const e = await err(list(`#pledge=${encodeVerifyRequest(swapped)}`));
+    const e = await err(list(withTerms(a.body, { contractAddress: b.contract.address })));
     expect(e.message).toMatch(/don’t match the contract address/);
     expect(store.rows).toHaveLength(0);
   });
 
   it('rejects a pledge with no on-chain lock', async () => {
-    const { link } = v1Pledge({ lock: false });
-    expect((await err(list(link))).message).toMatch(/No locked stake/);
-  });
-
-  it('rejects a lock that has already been spent or never matched the claimed UTXO', async () => {
-    const { r } = v1Pledge();
-    const wrongUtxo = { ...r, utxo: { ...r.utxo, satoshis: '19999' } };
-    expect((await err(list(`#pledge=${encodeVerifyRequest(wrongUtxo)}`))).message).toMatch(/No locked stake/);
+    expect((await err(list(v1Pledge({ lock: false }).body))).message).toMatch(/No locked stake/);
   });
 
   it('rejects the wrong network', async () => {
-    const { r } = v1Pledge();
-    // claims mainnet while every address is chipnet
-    const mainnet = { ...r, pledge: { ...r.pledge, network: 'mainnet' as const } };
-    expect((await err(list(`#pledge=${encodeVerifyRequest(mainnet)}`))).message).toMatch(/chipnet|mainnet|network/i);
-    // chipnet terms, mainnet contract address
-    const mixed = { ...r, pledge: { ...r.pledge, contractAddress: r.pledge.contractAddress.replace('bchtest:', 'bitcoincash:') } };
-    expect((await err(list(`#pledge=${encodeVerifyRequest(mixed)}`))).message).toMatch(/network|address|chipnet|mainnet/i);
-    // beneficiary on the other network
-    const bene = { ...r, pledge: { ...r.pledge, beneficiaryAddress: encodeCashAddress({ prefix: 'bitcoincash', type: CashAddressType.p2pkh, payload: hash160(beneficiary.pub) }).address } };
-    await err(list(`#pledge=${encodeVerifyRequest(bene)}`));
+    const p = v1Pledge();
+    expect((await err(list(withTerms(p.body, { network: 'mainnet' })))).message).toMatch(/chipnet|mainnet|network/i);
+    expect((await err(list(withTerms(p.body, { contractAddress: p.contract.address.replace('bchtest:', 'bitcoincash:') })))).message).toMatch(/network|address|chipnet|mainnet/i);
+    await err(list(withTerms(p.body, { beneficiaryAddress: encodeCashAddress({ prefix: 'bitcoincash', type: CashAddressType.p2pkh, payload: hash160(beneficiary.pub) }).address })));
     expect(store.rows).toHaveLength(0);
   });
 
-  it('rejects a listing without the staker’s signature (someone else’s wallet)', async () => {
-    const { link } = v1Pledge({ who: makeKey() });
-    const e = await err(list(link));
-    expect(e.status).toBe(403);
-    expect(e.message).toMatch(/Only the staker/);
-  });
-
   it('caps the habit at 140 characters and strips control characters', async () => {
-    expect((await err(list(v1Pledge().link, 'x'.repeat(HABIT_MAX + 1)))).message).toMatch(/140/);
-    expect((await err(list(v1Pledge().link, '   '))).message).toMatch(/140/);
-    await list(v1Pledge().link, '<b>Run</b>\u202e\u0007 5k');
+    expect((await err(list(v1Pledge({ habit: 'x'.repeat(HABIT_MAX + 1) }).body))).message).toMatch(/140/);
+    expect((await err(list({ ...v1Pledge().body, habit: '   ' }))).message).toMatch(/140/);
+    await list(v1Pledge({ habit: '<b>Run</b>\u202e\u0007 5k' }).body);
     expect(store.rows[0].habit).toBe('<b>Run</b> 5k'); // stored as text; React escapes it on render
     expect(cleanHabit('a'.repeat(HABIT_MAX))).toHaveLength(HABIT_MAX);
   });
 
   it('caps each staker at 5 active listings', async () => {
-    for (let i = 0; i < 5; i++) await list(v1Pledge().link, 'Run', `10.0.0.${i}`);
-    const e = await err(list(v1Pledge().link, 'Run', '10.0.1.1'));
+    for (let i = 0; i < 5; i++) await list(v1Pledge().body, `10.0.0.${i}`);
+    const e = await err(list(v1Pledge().body, '10.0.1.1'));
     expect(e.status).toBe(409);
     expect(e.message).toMatch(/5 active/);
   });
 
   it('rate-limits per hashed IP (counted in the registry, not memory)', async () => {
-    for (let i = 0; i < LIST_LIMITS.perIpPerHour; i++) await list('#pledge=bad', 'x', '9.9.9.9').catch(() => {});
-    expect((await err(list(v1Pledge().link, 'Run', '9.9.9.9'))).status).toBe(429);
+    for (let i = 0; i < LIST_LIMITS.perIpPerHour; i++) await list({ pledge: null, listSecret: null, listNonce: null, habit: 'x' }, '9.9.9.9').catch(() => {});
+    expect((await err(list(v1Pledge().body, '9.9.9.9'))).status).toBe(429);
     expect(store.attempts.every((a) => a.ipHash !== '9.9.9.9' && /^[0-9a-f]{32}$/.test(a.ipHash))).toBe(true);
-    // another IP is fine
-    await list(v1Pledge().link, 'Run', '8.8.8.8');
+    await list(v1Pledge().body, '8.8.8.8');
   });
 
   it('rate-limits per staker key', async () => {
-    const links = Array.from({ length: LIST_LIMITS.perStakerPerHour + 1 }, () => v1Pledge().link);
-    for (let i = 0; i < LIST_LIMITS.perStakerPerHour; i++) await list(links[i], 'x'.repeat(200), `7.0.0.${i}`).catch(() => {});
-    expect((await err(list(links[LIST_LIMITS.perStakerPerHour], 'Run', '7.0.9.9'))).status).toBe(429);
+    const bodies = Array.from({ length: LIST_LIMITS.perStakerPerHour + 1 }, () => v1Pledge().body);
+    for (let i = 0; i < LIST_LIMITS.perStakerPerHour; i++) await list({ ...bodies[i], habit: 'x'.repeat(200) }, `7.0.0.${i}`).catch(() => {});
+    expect((await err(list(bodies[LIST_LIMITS.perStakerPerHour], '7.0.9.9'))).status).toBe(429);
   });
 
   it('refuses to list when only the bundled legacy list is available', async () => {
     store.kind = 'legacy-only';
-    expect((await err(list(v1Pledge().link))).status).toBe(503);
+    expect((await err(list(v1Pledge().body))).status).toBe(503);
+  });
+});
+
+describe('listSecret', () => {
+  it('the pledge id commits to nonce, habit and sha256(secret); only the matching secret passes', () => {
+    const s = newListSecret();
+    const n = newListNonce();
+    expect(s).toMatch(/^[0-9a-f]{64}$/);
+    expect(n).toMatch(/^[0-9a-f]{32}$/);
+    const id = listPledgeId(n, HABIT, listSecretHash(s));
+    expect(id).toMatch(/^[0-9a-f]{32}$/);
+    expect(secretMatchesPledge(s, n, HABIT, id)).toBe(true);
+    expect(secretMatchesPledge(newListSecret(), n, HABIT, id)).toBe(false);
+    expect(secretMatchesPledge(s, newListNonce(), HABIT, id)).toBe(false);
+    expect(secretMatchesPledge(s, n, HABIT + ' ', id)).toBe(false);
+    expect(secretMatchesPledge(listSecretHash(s), n, HABIT, id)).toBe(false); // the hash alone isn't the secret
+    expect(secretMatchesPledge('zz', n, HABIT, id)).toBe(false);
+  });
+
+  it('never appears in encoded verify links or share URLs', () => {
+    const p1 = v1Pledge();
+    const p2 = v2Pledge();
+    const { r: r1, url: u1 } = verifyLinkFor(p1);
+    const encoded = [u1, encodeVerifyRequest(r1), p2.url, encodeQuorumRequest(p2.r)];
+    const decoded = [JSON.stringify(decodeAnyVerifyRequest(u1.split('#')[1])), JSON.stringify(decodeAnyVerifyRequest(p2.url.split('#')[1]))];
+    for (const x of [...encoded, ...decoded]) {
+      for (const secret of [p1.listSecret, p2.listSecret]) expect(x).not.toContain(secret);
+      expect(x).not.toMatch(/listSecret|listNonce/);
+    }
+    // link terms are built from the stored pledge (which holds the secret) by quorumTerms(): no secret field
+    expect(JSON.stringify(quorumTerms(p2.stored))).not.toContain(p2.listSecret);
+    expect(JSON.stringify(wallTerms(p1.stored))).not.toContain(p1.listSecret);
   });
 });
 

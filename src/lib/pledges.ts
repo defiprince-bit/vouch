@@ -29,6 +29,14 @@ export interface StoredPledge {
   quorum?: QuorumProgress;
   /** Wall visibility picked on create. Missing = unlisted (pledges made before the wall). */
   visibility?: 'public' | 'unlisted';
+  /**
+   * Wall listing proof (src/lib/listSecret.ts): 32-byte hex secret and 16-byte hex nonce made at
+   * create time; the pledge id commits to nonce, habit (`promise`) and sha256(listSecret). Lives
+   * ONLY in this browser's storage: never in a verify link, share URL, or anything sent anywhere
+   * except POST /api/wall. Missing on pledges made before this existed (they can't be listed).
+   */
+  listSecret?: string;
+  listNonce?: string;
   /** ms, when /api/wall accepted the listing. */
   listedAt?: number;
 }

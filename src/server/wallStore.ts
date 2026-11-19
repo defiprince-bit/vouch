@@ -5,7 +5,7 @@
 // Schema (vouch-wall database):
 //   listings(pledge_id TEXT PRIMARY KEY, contract_address TEXT UNIQUE, network, version, habit
 //            (1..140 chars), staker_pubkey, terms_json, created_at, legacy, hidden, state,
-//            state_json, checked_at)
+//            state_json, checked_at, list_secret_hash)  -- sha256(listSecret); never the secret
 //   list_attempts(id, ip_hash, staker_pubkey, at)        -- rate limiting for POST /api/wall
 // To pull a listing without a redeploy:  UPDATE listings SET hidden = 1 WHERE pledge_id = '<hex>';
 import type { BchNetwork } from '@/lib/providers';
@@ -27,6 +27,8 @@ export interface ListingRow {
   state: WallState | null;
   stateJson: string | null;
   checkedAt: number | null;
+  /** sha256(listSecret) hex; null for the legacy seeds. */
+  listSecretHash?: string | null;
 }
 
 export class DuplicateListingError extends Error {}
@@ -109,8 +111,8 @@ export class TursoWallStore implements WallStore {
   }
   async insert(x: ListingRow) {
     await this.#exec(
-      'INSERT INTO listings (pledge_id, contract_address, network, version, habit, staker_pubkey, terms_json, created_at, legacy, hidden, state, state_json, checked_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
-      [x.pledgeId, x.contractAddress, x.network, x.version, x.habit, x.stakerPubkey, x.termsJson, x.createdAt, x.legacy ? 1 : 0, x.hidden ? 1 : 0, x.state, x.stateJson, x.checkedAt],
+      'INSERT INTO listings (pledge_id, contract_address, network, version, habit, staker_pubkey, terms_json, created_at, legacy, hidden, state, state_json, checked_at, list_secret_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      [x.pledgeId, x.contractAddress, x.network, x.version, x.habit, x.stakerPubkey, x.termsJson, x.createdAt, x.legacy ? 1 : 0, x.hidden ? 1 : 0, x.state, x.stateJson, x.checkedAt, x.listSecretHash ?? null],
     );
   }
   async saveState(pledgeId: string, state: WallState, stateJson: string, checkedAt: number) {

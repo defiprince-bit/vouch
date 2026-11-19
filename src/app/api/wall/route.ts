@@ -1,5 +1,5 @@
 // GET  /api/wall?network=chipnet|mainnet  -> cards + stats, derived from the chain (edge-cached)
-// POST /api/wall {link, habit}             -> list a pledge (staker-proof; see src/server/wall.ts)
+// POST /api/wall {pledge, listSecret, listNonce, habit} -> list a pledge (proof: the creating browser's listSecret; see src/server/wall.ts)
 import { NextResponse, connection, type NextRequest } from 'next/server';
 import { jsonError, networkParam } from '@/server/http';
 import { clientIp } from '@/server/rateLimit';
@@ -21,9 +21,12 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json().catch(() => null)) as { link?: unknown; habit?: unknown } | null;
-    if (!body) return NextResponse.json({ error: 'Bad request' }, { status: 400 });
-    const res = await listPledge({ link: body.link, habit: body.habit, ip: clientIp(req.headers) }, { store: wallStore(), chain: restChain });
+    const body = (await req.json().catch(() => null)) as { pledge?: unknown; listSecret?: unknown; listNonce?: unknown; habit?: unknown } | null;
+    if (!body || typeof body !== 'object') return NextResponse.json({ error: 'Bad request' }, { status: 400 });
+    const res = await listPledge(
+      { pledge: body.pledge, listSecret: body.listSecret, listNonce: body.listNonce, habit: body.habit, ip: clientIp(req.headers) },
+      { store: wallStore(), chain: restChain },
+    );
     return NextResponse.json(res, { headers: { 'cache-control': 'no-store' } });
   } catch (e) {
     return jsonError(e);

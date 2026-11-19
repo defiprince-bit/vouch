@@ -1,23 +1,24 @@
 // Public wall service: listing (POST /api/wall) and reading (GET /api/wall). Server-only.
 //
-// Listing ("staker-proof"): the client sends the same signed request a verify link carries: the
-// pledge terms, the locked UTXO and the staker's pre-signature over the keep transaction for that
-// UTXO. The server
+// Listing proof: the pledge's listSecret (see src/lib/listSecret.ts). The staker's browser makes
+// it at create time with a nonce and keeps both only in its own pledge storage. The pledge id
+// (a contract constructor arg) is sha256(domain || nonce || habit || sha256(listSecret))[0..16),
+// so the contract itself commits to the secret's hash before any link is shared. A verify link
+// carries the pledge id but never the secret, so holding a link isn't enough to list, and nobody
+// can pre-register under a secret of their own. The server
 //   1. rate-limits per hashed IP and per staker key, counted in the registry (not in memory);
 //   2. validates the terms (same rules as /api/verifier) and rebuilds the contract;
 //   3. refuses if the rebuilt address isn't the one claimed, or isn't on the claimed network;
-//   4. refuses unless that UTXO is unspent at the contract address on chain;
-//   5. refuses unless the staker signature verifies for the staker key over that exact keep tx —
-//      only the staker's wallet can make it, so nobody else can list someone's pledge;
+//   4. refuses (403) unless sha256(listSecret), the nonce and the habit rebuild the pledge id;
+//   5. refuses unless the contract has a lock on chain (an unspent UTXO, or history);
 //   6. caps each staker at MAX_ACTIVE_PER_STAKER active listings; pledgeId is UNIQUE.
-// The signature is checked and dropped, never stored (it only ever pays the staker anyway).
+// It stores sha256(listSecret), never the secret. Pledges whose id isn't such a commitment
+// (made before this) can't be newly listed; the legacy seeds were inserted directly.
 import { createHash } from 'node:crypto';
 import { hexToBin } from '@bitauth/libauth';
-import { placeholderSignature, type NetworkProvider } from 'cashscript';
-import { buildKeep, stakerP2pkhAddress, DEFAULT_FEE, getProvider, type BchNetwork } from '@/lib/vouch';
-import { DUMMY_SIGNATURE } from '@/lib/wc';
-import { spendSighash, isValidSpendSig, QUORUM_FEE } from '@/lib/quorum';
-import { decodeAnyVerifyRequest, isQuorumRequest, checkRequestSigs } from '@/lib/quorumShare';
+import type { NetworkProvider } from 'cashscript';
+import { getProvider, stakerP2pkhAddress, type BchNetwork } from '@/lib/vouch';
+import { listSecretHash, secretMatchesPledge } from '@/lib/listSecret';
 import { restUpstream } from '@/lib/providers';
 import { addressNetwork } from '@/lib/network';
 import {
@@ -72,13 +73,22 @@ export interface ListDeps {
 }
 
 export interface ListInput {
-  /** The verify-link fragment (#pledge=…) or its payload, as made by prepareVerifyRequest / prepareQuorumRequest. */
-  link: unknown;
+  /**
+   * The pledge terms: id, deadline, beneficiaryAddress, stakerPubkey, network, contractAddress,
+   * and verifierPubkey (v1) or version 2 + verifierPubkeys + threshold (quorum).
+   */
+  pledge: unknown;
+  /** 32-byte hex secret and 16-byte hex nonce from the creating browser's pledge storage. */
+  listSecret: unknown;
+  listNonce: unknown;
+  /** The habit exactly as committed in the pledge id. */
   habit: unknown;
   ip: string;
 }
 
-/** Validate and insert a listing. Throws VerifierError (400/403/409/429) with a human message. */
+const str = (v: unknown) => (typeof v === 'string' ? v : '');
+
+/** Validate and insert a listing. Throws VerifierError (400/403/409/429/503) with a human message. */
 export async function listPledge(input: ListInput, deps: ListDeps): Promise<{ pledgeId: string; contractAddress: string; network: BchNetwork }> {
   const now = deps.now ?? Date.now();
   const { store, chain } = deps;
@@ -90,75 +100,53 @@ export async function listPledge(input: ListInput, deps: ListDeps): Promise<{ pl
   }
 
   // Every attempt counts toward the limits, valid or not.
-  let r: ReturnType<typeof decodeAnyVerifyRequest> | null = null;
-  let decodeError = 'Missing pledge';
-  if (typeof input.link === 'string' && input.link.length <= 6000) {
-    try {
-      r = decodeAnyVerifyRequest(input.link);
-    } catch (e) {
-      decodeError = (e as Error).message;
-    }
-  }
-  const stakerPubkey = String(r?.pledge.stakerPubkey ?? '').toLowerCase();
+  const raw = (input.pledge && typeof input.pledge === 'object' ? input.pledge : null) as Record<string, unknown> | null;
+  const stakerPubkey = str(raw?.stakerPubkey).toLowerCase();
   const stakerKnown = /^0[23][0-9a-f]{64}$/.test(stakerPubkey);
   await store.recordAttempt(ipHash, stakerKnown ? stakerPubkey : null, now);
   if (stakerKnown && (await store.countAttempts(hourAgo, { stakerPubkey })) > LIST_LIMITS.perStakerPerHour) {
     throw new VerifierError('Too many listing attempts for this wallet in the last hour. Try again later.', 429);
   }
-  if (!r) throw new VerifierError(decodeError);
-  const p = r.pledge;
+  if (!raw) throw new VerifierError('Missing pledge');
 
-  const habit = cleanHabit(input.habit ?? p.promise);
+  const habit = cleanHabit(input.habit);
   if (!habit) throw new VerifierError(`Write the habit in 1 to ${HABIT_MAX} characters.`);
 
   // Same term rules as the verifier API (network, beneficiary on that network, deadline, quorum shape).
-  const q = isQuorumRequest(r) ? r : null;
-  const quorum = !!q;
+  const quorum = raw.version === 2;
   const terms: PledgeTerms = parseTerms({
-    id: p.id,
-    deadline: p.deadline,
-    beneficiaryAddress: p.beneficiaryAddress,
+    id: str(raw.id).toLowerCase(),
+    deadline: raw.deadline,
+    beneficiaryAddress: raw.beneficiaryAddress,
     stakerPubkey,
-    network: p.network,
+    network: raw.network,
     ...(quorum
-      ? { version: 2, verifierPubkeys: q!.pledge.verifiers.map((v) => v.pubkey.toLowerCase()), threshold: q!.pledge.threshold }
-      : { verifierPubkey: String((p as { verifierPubkey?: string }).verifierPubkey ?? '').toLowerCase() }),
+      ? { version: 2, verifierPubkeys: Array.isArray(raw.verifierPubkeys) ? raw.verifierPubkeys.map((v) => str(v).toLowerCase()) : [], threshold: raw.threshold }
+      : { verifierPubkey: str(raw.verifierPubkey).toLowerCase() }),
   });
   const network = terms.network;
-  const claimed = String(p.contractAddress ?? '').trim().toLowerCase();
+  const claimed = str(raw.contractAddress).trim().toLowerCase();
   if (addressNetwork(claimed) !== network) throw new VerifierError(`The contract address isn’t a ${network} address.`);
   const provider = (deps.provider ?? getProvider)(network);
   const contract = contractForTerms(terms, provider);
   if (contract.address.toLowerCase() !== claimed) throw new VerifierError('These terms don’t match the contract address.');
 
-  // The lock must be on chain, unspent, exactly as claimed.
-  const utxos = await chain.utxos(network, contract.address);
-  const lock = utxos.find((u) => u.txid === r.utxo.txid && u.vout === r.utxo.vout && u.satoshis.toString() === String(r.utxo.satoshis));
-  if (!lock) throw new VerifierError('No locked stake found at this contract on chain. List it once the lock has gone through.');
-
-  // Staker proof: their signature over the keep tx for this UTXO.
-  let ok = false;
-  if (q) {
-    if (r.fee !== QUORUM_FEE.toString()) throw new VerifierError('Bad fee');
-    ok = checkRequestSigs(q, provider).stakerSigOk;
-  } else {
-    if (r.fee !== DEFAULT_FEE.toString()) throw new VerifierError('Bad fee');
-    const builder = buildKeep({
-      contract: contract as Parameters<typeof buildKeep>[0]['contract'],
-      provider,
-      utxo: { txid: lock.txid, vout: lock.vout, satoshis: lock.satoshis, lockingBytecode: contract.lockingBytecode },
-      stakerSig: placeholderSignature(),
-      verifierSig: DUMMY_SIGNATURE,
-      stakerAddress: stakerP2pkhAddress(hexToBin(stakerPubkey), network),
-    });
-    ok = isValidSpendSig(spendSighash(contract, builder), hexToBin(r.stakerSig), hexToBin(stakerPubkey));
+  // The proof: sha256(listSecret), the nonce and the habit must rebuild the pledge id the contract commits to.
+  if (!secretMatchesPledge(input.listSecret, input.listNonce, input.habit, terms.id)) {
+    throw new VerifierError('This pledge can only be listed from the browser that created it.', 403);
   }
-  if (!ok) throw new VerifierError('The staker’s signature doesn’t check out. Only the staker’s wallet can list a pledge.', 403);
+
+  // The lock must be on chain.
+  const utxos = await chain.utxos(network, contract.address);
+  if (!utxos.length && !(await chain.history(network, contract.address)).length) {
+    throw new VerifierError('No locked stake found at this contract on chain. List it once the lock has gone through.');
+  }
 
   if ((await store.countActiveForStaker(stakerPubkey)) >= MAX_ACTIVE_PER_STAKER) {
     throw new VerifierError(`This wallet already has ${MAX_ACTIVE_PER_STAKER} active pledges on the wall. List more once some have ended.`, 409);
   }
-  const state: DerivedState = { state: 'active', stakeSats: utxos.reduce((a, u) => a + u.satoshis, 0n).toString(), sealsCollected: null };
+  // Unspent now: active. Already spent: left for readWall to derive (kept or paid).
+  const state: DerivedState | null = utxos.length ? { state: 'active', stakeSats: utxos.reduce((a, u) => a + u.satoshis, 0n).toString(), sealsCollected: null } : null;
   try {
     await store.insert({
       pledgeId: terms.id.toLowerCase(),
@@ -171,9 +159,10 @@ export async function listPledge(input: ListInput, deps: ListDeps): Promise<{ pl
       createdAt: now,
       legacy: false,
       hidden: false,
-      state: 'active',
-      stateJson: JSON.stringify(state),
-      checkedAt: now,
+      state: state ? 'active' : null,
+      stateJson: state ? JSON.stringify(state) : null,
+      checkedAt: state ? now : null,
+      listSecretHash: listSecretHash(input.listSecret as string),
     });
   } catch (e) {
     if (e instanceof DuplicateListingError) throw new VerifierError('This pledge is already on the wall.', 409);

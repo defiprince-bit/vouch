@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { hexToBin } from '@bitauth/libauth';
-import { createPledgeContract, getProvider, newPledgeId, validatePledge, verifyByHeight, MIN_STAKE, DEFAULT_MAX_FEE } from '@/lib/vouch';
+import { createPledgeContract, getProvider, validatePledge, verifyByHeight, MIN_STAKE, DEFAULT_MAX_FEE } from '@/lib/vouch';
 import { savePledge, type StoredPledge } from '@/lib/pledges';
 import { checkAddress, explorerAddr } from '@/lib/network';
 import { useNetwork } from '@/lib/useNetwork';
@@ -16,8 +16,9 @@ import { lockFromWallet, walletBalance } from '@/lib/walletActions';
 import { createQuorumContract, quorumPledgeIssues, quorumShapeIssues, quorumPowerCopy } from '@/lib/quorum';
 import { QuorumFields, rowKeyError, type VerifierRow } from './QuorumFields';
 import { useNow } from '@/lib/useNow';
-import { defaultVisibility, VISIBILITY_COPY, type Visibility } from '@/lib/wall';
+import { defaultVisibility, VISIBILITY_COPY, HABIT_MAX, type Visibility } from '@/lib/wall';
 import { listOnWall } from '@/lib/wallActions';
+import { newListSecret, newListNonce, listSecretHash, listPledgeId } from '@/lib/listSecret';
 
 type Step = 'details' | 'review' | 'done';
 const MIN_DEADLINE_BLOCKS = 12;
@@ -110,6 +111,7 @@ export function CreatePledgeForm() {
     setTriedSubmit(true);
     const errs: string[] = [];
     if (!habit.trim()) errs.push('Write the habit in one line.');
+    else if (habit.trim().length > HABIT_MAX) errs.push(`Keep the habit to ${HABIT_MAX} characters.`);
     if (sats === null || sats < MIN_STAKE) errs.push(`The stake must be at least ${formatSats(MIN_STAKE)} (${formatBch(MIN_STAKE)}), so the payout stays above dust after fees.`);
     if (!Number.isFinite(deadlineMs) || deadlineMs - Date.now() < MIN_DEADLINE_BLOCKS * 600_000) errs.push('Pick a deadline at least 2 hours from now.');
     if (!/^[0-9a-f]{66}$/i.test(stakerHex)) errs.push('Connect your wallet first (or paste your public key below).');
@@ -137,6 +139,11 @@ export function CreatePledgeForm() {
       // A block height, comfortably past the verify-by margin (the contract would read >= 500M as a clock time).
       if (deadline <= height + 6 || deadline >= 500_000_000) return setErrors(['Pick a deadline at least 2 hours from now.']);
       const beneficiaryAddress = beneCheck && beneCheck.ok ? beneCheck.address : beneficiary.trim();
+      // Wall-listing proof: the pledge id commits to a nonce, the habit and sha256(listSecret).
+      // The secret and nonce stay in this browser's pledge storage only.
+      const listSecret = newListSecret();
+      const listNonce = newListNonce();
+      const pledgeId = listPledgeId(listNonce, habit.trim(), listSecretHash(listSecret));
       if (verifierMode === 'group') {
         const qParams = {
           stakerPubkey: hexToBin(stakerHex),
@@ -144,7 +151,7 @@ export function CreatePledgeForm() {
           threshold: groupM,
           beneficiaryAddress,
           deadline,
-          pledgeId: newPledgeId(),
+          pledgeId,
         };
         const qIssues = quorumPledgeIssues(qParams).map((i) => (i === 'Verifier must not be the beneficiary' ? SAME_ADDR : i));
         if (qIssues.length) return setErrors(qIssues);
@@ -167,6 +174,8 @@ export function CreatePledgeForm() {
           network,
           createdAt: now,
           visibility,
+          listSecret,
+          listNonce,
         });
         setStep('review');
         return;
@@ -176,7 +185,7 @@ export function CreatePledgeForm() {
         verifierPubkey: hexToBin(verifierHex),
         beneficiaryAddress,
         deadline,
-        pledgeId: newPledgeId(),
+        pledgeId,
       };
       const issues = validatePledge(params, sats!, network).map((i) => (i === 'Verifier must not be the beneficiary' ? SAME_ADDR : i));
       const hard = issues.filter((i) => !i.startsWith('Verifier is the staker'));
@@ -198,6 +207,8 @@ export function CreatePledgeForm() {
         network,
         createdAt: now,
         visibility,
+        listSecret,
+        listNonce,
       });
       setStep('review');
     } catch (err) {
@@ -230,15 +241,14 @@ export function CreatePledgeForm() {
     }
   }
 
-  /** "List on the wall": one more wallet signature (the staker proof), then POST /api/wall. */
+  /** "List on the wall": registers the lock and lists it in one call, proven by this browser's listSecret. */
   async function listIt(p: StoredPledge) {
-    if (!wallet.manager) return setWallMsg({ kind: 'err', text: 'Connect your wallet to list it.' });
-    setWallMsg({ kind: 'busy', text: 'Listing on the wall: approve the signature in your wallet (it proves you’re the staker; nothing is spent)…' });
-    let res = await listOnWall(wallet.manager, p);
+    setWallMsg({ kind: 'busy', text: 'Listing on the wall…' });
+    let res = await listOnWall(p);
     // The lock can take a few seconds to show up on the indexer.
-    for (let i = 0; i < 3 && !res.ok && /no locked stake|not found|no utxo/i.test(res.error); i++) {
+    for (let i = 0; i < 3 && !res.ok && /no locked stake/i.test(res.error); i++) {
       await new Promise((r) => setTimeout(r, 4000));
-      res = await listOnWall(wallet.manager, p);
+      res = await listOnWall(p);
     }
     if (res.ok) {
       setDraft({ ...p, visibility: 'public', listedAt: res.listedAt });
@@ -460,7 +470,7 @@ export function CreatePledgeForm() {
                     </>
                   );
                 })()}{draft.verifierKind === 'demo' && <span className="footnote" style={{ display: 'block' }}>Demo verifier is run by Vouch.</span>}</dd></div>
-                <div className="kv-row"><dt>Visibility</dt><dd data-testid="review-visibility">{VISIBILITY_COPY[draft.visibility ?? 'unlisted'].label}<span className="footnote" style={{ display: 'block' }}>{draft.visibility === 'public' ? 'Listed after the lock confirms, with one more wallet signature.' : 'Hidden from the wall, still on-chain.'}</span></dd></div>
+                <div className="kv-row"><dt>Visibility</dt><dd data-testid="review-visibility">{VISIBILITY_COPY[draft.visibility ?? 'unlisted'].label}<span className="footnote" style={{ display: 'block' }}>{draft.visibility === 'public' ? 'Listed right after the lock. Only this browser can list it later, too.' : 'Hidden from the wall, still on-chain.'}</span></dd></div>
                 <div className="kv-row"><dt>Contract</dt><dd className="addr"><a href={explorerAddr(draft.network, draft.contractAddress)} target="_blank" rel="noreferrer">{draft.contractAddress}</a></dd></div>
               </dl>
               {lockMsg && <p className="callout" style={{ marginTop: 12 }}>{lockMsg}</p>}
@@ -501,7 +511,7 @@ export function CreatePledgeForm() {
                   {!draft.listedAt && wallMsg?.kind !== 'busy' && (
                     <button className="btn btn-ghost" type="button" onClick={() => void listIt(draft)} data-testid="list-on-wall">List on the wall</button>
                   )}
-                  {!draft.listedAt && !wallMsg && <p className="footnote" style={{ marginTop: 6 }}>Unlisted. Listing shows the habit, stake, deadline and outcome; the beneficiary stays off the wall.</p>}
+                  {!draft.listedAt && !wallMsg && <p className="footnote" style={{ marginTop: 6 }}>Unlisted. Listing shows the habit, stake, deadline and outcome; the beneficiary stays off the wall. Only this browser can list it.</p>}
                 </div>
               )}
               <div className="form-actions">
