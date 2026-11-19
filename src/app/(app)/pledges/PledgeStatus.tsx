@@ -484,7 +484,7 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
               </div>
               <div className="kv-row">
                 <dt>Key</dt>
-                <dd className="addr">{isDemo ? 'Demo key (run by this app)' : shortAddr(stakerP2pkhAddress(hexToBin(pledge.verifierPubkey)))}</dd>
+                <dd className="addr">{isDemo ? 'Demo key (run by this app)' : shortAddr(stakerP2pkhAddress(hexToBin(pledge.verifierPubkey), pledge.network))}</dd>
               </div>
               <div className="kv-row">
                 <dt>Status</dt>

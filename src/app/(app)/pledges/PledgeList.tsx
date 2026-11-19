@@ -1,8 +1,9 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { RenderBoundary } from '@/components/RenderBoundary';
 import Link from 'next/link';
 import type { StoredPledge } from '@/lib/pledges';
-import { pledgeContract } from '@/lib/walletActions';
+import { anyPledgeContract } from '@/lib/walletActions';
 import { formatBch, formatDateTime } from '@/lib/format';
 
 type RowState = 'loading' | 'active' | 'unfunded' | 'closed' | 'error';
@@ -23,8 +24,9 @@ function Row({ pledge }: { pledge: StoredPledge }) {
   const [state, setState] = useState<RowState>('loading');
   useEffect(() => {
     let alive = true;
-    pledgeContract(pledge)
-      .contract.getUtxos()
+    // Built inside the promise so a pledge whose terms can't make a contract shows "Offline", not a crash.
+    Promise.resolve()
+      .then(() => anyPledgeContract(pledge).contract.getUtxos())
       .then((u) => alive && setState(u.length ? 'active' : pledge.lastTxid || pledge.outcome ? 'closed' : 'unfunded'))
       .catch(() => alive && setState('error'));
     return () => {
@@ -50,6 +52,16 @@ function Row({ pledge }: { pledge: StoredPledge }) {
   );
 }
 
+const rowFallback = (id: string) => (
+  <Link className="pledge-row" href={`/pledges/${id}`}>
+    <div>
+      <h2>Pledge {id.slice(0, 8)}…</h2>
+      <p className="meta">Couldn’t show this pledge’s details here. Open it to see its status.</p>
+    </div>
+    <span className="badge badge-off">Unknown</span>
+  </Link>
+);
+
 export function PledgeList({ pledges }: { pledges: StoredPledge[] }) {
   return (
     <>
@@ -66,7 +78,7 @@ export function PledgeList({ pledges }: { pledges: StoredPledge[] }) {
           <Link className="btn btn-primary" href="/create">Create a pledge</Link>
         </div>
       ) : (
-        <div className="pledge-list">{pledges.map((p) => <Row key={p.id} pledge={p} />)}</div>
+        <div className="pledge-list">{pledges.map((p) => <RenderBoundary key={p.id} label="Pledge row" fallback={rowFallback(p.id)}><Row pledge={p} /></RenderBoundary>)}</div>
       )}
       <p className="footnote" style={{ marginTop: 16 }}>Pledges are listed from this browser. The coins themselves live in each pledge’s contract on Bitcoin Cash.</p>
     </>
