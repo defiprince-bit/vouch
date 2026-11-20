@@ -13,7 +13,7 @@ import { ConnectWallet } from '@/components/ConnectWallet';
 import { useWallet } from '@/components/WalletProvider';
 import { useDemoVerifier } from '@/lib/useDemoVerifier';
 import { lockFromWallet, walletBalance } from '@/lib/walletActions';
-import { createQuorumContract, quorumPledgeIssues, quorumShapeIssues, quorumPowerCopy } from '@/lib/quorum';
+import { createQuorumContract, quorumPledgeIssues, quorumShapeIssues, quorumPowerCopy, quorumLabel, quorumSignVerb } from '@/lib/quorum';
 import { QuorumFields, rowKeyError, type VerifierRow } from './QuorumFields';
 import { useNow } from '@/lib/useNow';
 import { defaultVisibility, VISIBILITY_COPY, HABIT_MAX, type Visibility } from '@/lib/wall';
@@ -93,7 +93,8 @@ export function CreatePledgeForm() {
   const deadlineMs = new Date(deadlineLocal).getTime();
   const stakerHex = wallet.stakerPubkeyHex ?? manualStaker.trim();
   const verifierHex = verifierMode === 'demo' ? (demo.pubkey ?? '') : friendKey.trim();
-  const verifierLabel = verifierMode === 'demo' ? 'Vouch demo' : verifierMode === 'group' ? `${groupM} of ${groupKeys.length || '…'} verifiers` : friendName.trim() || 'Your friend';
+  const verifierLabel = verifierMode === 'demo' ? 'Vouch demo' : verifierMode === 'group' ? quorumLabel(groupM, groupKeys.length) : friendName.trim() || 'Your friend';
+  const verifierVerb = verifierMode === 'group' ? quorumSignVerb(groupM) : 'signs';
   const beneLabel = beneName.trim() || 'The beneficiary';
   const sameAddr = errors.includes(SAME_ADDR);
   const preview = useMemo(
@@ -454,7 +455,7 @@ export function CreatePledgeForm() {
                 <div className="outcome-panel keep">
                   <h3>If you keep it</h3>
                   <p className="amount-lg">{formatBch(draft.stakeSats)}</p>
-                  <p>Returns to your wallet when <strong>{verifierLabel}</strong> signs the refund. You don’t sign it: the contract only lets the refund pay your own address, <span className="addr">{stakerP2pkhAddress(hexToBin(draft.stakerPubkey), draft.network)}</span>, so the verifier can’t send it anywhere else. Your signature alone can’t refund it.</p>
+                  <p>Returns to your wallet when <strong>{verifierLabel}</strong> {verifierVerb} the refund. You don’t sign it: the contract only lets the refund pay your own address, <span className="addr">{stakerP2pkhAddress(hexToBin(draft.stakerPubkey), draft.network)}</span>, so the verifier can’t send it anywhere else. Your signature alone can’t refund it.</p>
                 </div>
                 <div className="outcome-panel break">
                   <h3>Break or expiry</h3>
@@ -467,7 +468,7 @@ export function CreatePledgeForm() {
                 <div className="kv-row"><dt>Habit</dt><dd>{draft.promise}</dd></div>
                 <div className="kv-row"><dt>Deadline</dt><dd>{draft.deadlineAt ? formatDateTime(draft.deadlineAt) : ''} <span className="addr">(block {draft.deadline})</span></dd></div>
                 <div className="kv-row"><dt>Verify by</dt><dd>block {verifyByHeight(draft.deadline)}, about an hour before the deadline</dd></div>
-                <div className="kv-row"><dt>Verifier</dt><dd>{draft.version === 2 ? `${draft.threshold} of ${draft.verifiers!.length}: ${draft.verifiers!.map((v, i) => v.name ?? `Verifier ${i + 1}`).join(', ')}` : verifierLabel}{draft.version === 2 && (() => {
+                <div className="kv-row"><dt>Verifier</dt><dd>{draft.version === 2 ? `${quorumLabel(draft.threshold!, draft.verifiers!.length)}: ${draft.verifiers!.map((v, i) => v.name ?? `Verifier ${i + 1}`).join(', ')}` : verifierLabel}{draft.version === 2 && (() => {
                   const pc = quorumPowerCopy(draft.threshold!, draft.verifiers!.length);
                   return (
                     <>
@@ -506,7 +507,7 @@ export function CreatePledgeForm() {
               )}
               <p className="lede" style={{ margin: '16px 0' }}>
                 {draft.version === 2
-                  ? `When you’ve kept it, open the pledge and tap Keep: it makes one signing link for your verifiers. Any ${draft.threshold} of the ${draft.verifiers!.length} sign, one after another, and the coins come back to you. You don’t sign. The same ${draft.threshold} could instead vote it broken and pay the beneficiary.`
+                  ? `When you’ve kept it, open the pledge and tap Keep: it makes one signing link for your verifiers. Any ${draft.threshold} of the ${draft.verifiers!.length} ${quorumSignVerb(draft.threshold!)}, one after another, and the coins come back to you. You don’t sign. The same ${draft.threshold} could instead vote it broken and pay the beneficiary.`
                   : draft.verifierKind === 'friend'
                   ? `When you’ve kept it, open the pledge and tap Keep: it makes a signing link for ${verifierLabel}. They sign the refund in their wallet and the coins come back to you. You don’t sign.`
                   : 'When you’ve kept it, open the pledge and tap Keep before the verify-by time. The demo verifier signs the refund back to you. You don’t sign.'}

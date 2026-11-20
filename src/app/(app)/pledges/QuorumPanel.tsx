@@ -13,7 +13,7 @@ import {
   type QuorumVerifyRequest,
 } from '@/lib/quorumShare';
 import { quorumTerms, progressOf, demoQuorumSig, broadcastQuorumKeep, broadcastQuorumBreak, stakerProofOf } from '@/lib/quorumActions';
-import { QUORUM_FEE } from '@/lib/quorum';
+import { QUORUM_FEE, quorumSignVerb } from '@/lib/quorum';
 import { shortAddr } from '@/lib/format';
 import { stakerP2pkhAddress } from '@/lib/vouch';
 import { hexToBin } from '@bitauth/libauth';
@@ -192,7 +192,7 @@ export function QuorumPanel(props: {
       {active && !req && (
         <p className="hint" style={{ marginTop: 10 }}>
           {pledge.verifierRefund
-            ? `Tap “I kept it” to get the signing link. You don’t sign: any ${m} of your verifiers sign the refund back to your address.`
+            ? `Tap “I kept it” to get the signing link. You don’t sign: any ${m} of your ${n === 1 ? 'verifier' : 'verifiers'} ${quorumSignVerb(m)} the refund back to your address.`
             : 'Tap “I kept it” to pre-sign your refund and get the signing link.'}
         </p>
       )}

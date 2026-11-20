@@ -13,6 +13,8 @@ import {
   quorumPledgeIssues,
   createQuorumContract,
   quorumPowerCopy,
+  quorumLabel,
+  quorumSignVerb,
   UNUSED_SLOT_KEYS,
   STAKER_AS_VERIFIER,
   DUPLICATE_VERIFIER,
@@ -209,6 +211,15 @@ describe('M-of-N copy', () => {
     expect(quorumPowerCopy(1, 3).warning).toMatch(/any single verifier can rule it broken/);
     expect(quorumPowerCopy(1, 1).warning).toMatch(/1 of 1/);
     expect(quorumPowerCopy(2, 3, 'verifier').summary).toMatch(/staker’s refund/);
+  });
+
+  it('agrees number and verb: 2 of 3 verifiers sign, 1 of 1 verifier signs', () => {
+    expect(quorumLabel(2, 3)).toBe('2 of 3 verifiers');
+    expect(quorumSignVerb(2)).toBe('sign');
+    expect(`${quorumLabel(2, 3)} ${quorumSignVerb(2)}`).toBe('2 of 3 verifiers sign');
+    expect(`${quorumLabel(1, 1)} ${quorumSignVerb(1)}`).toBe('1 of 1 verifier signs');
+    expect(`${quorumLabel(1, 3)} ${quorumSignVerb(1)}`).toBe('1 of 3 verifiers signs');
+    expect(quorumLabel(2, 0)).toBe('2 of … verifiers');
   });
 
   it('marks the demo verifier by key only: a name can’t claim it', () => {

@@ -110,6 +110,17 @@ export function quorumPowerCopy(m: number, n: number, reader: 'staker' | 'verifi
   return { summary, warning };
 }
 
+/** M-of-N as a noun phrase: "2 of 3 verifiers", "1 of 1 verifier". n<=0 yields "2 of … verifiers". */
+export function quorumLabel(m: number, n: number): string {
+  const count = n > 0 ? String(n) : '…';
+  return `${m} of ${count} ${n === 1 ? 'verifier' : 'verifiers'}`;
+}
+
+/** Verb that agrees with an M-of-N subject: "2 of 3 verifiers sign", "1 of 1 verifier signs". */
+export function quorumSignVerb(m: number): 'sign' | 'signs' {
+  return m === 1 ? 'signs' : 'sign';
+}
+
 /** The five constructor slot keys: the real verifiers, then unspendable padding. */
 export function slotKeys(verifierPubkeys: Uint8Array[]): Uint8Array[] {
   return Array.from({ length: MAX_VERIFIERS }, (_, i) => verifierPubkeys[i] ?? hexToBin(UNUSED_SLOT_KEYS[i]));

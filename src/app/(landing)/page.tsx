@@ -145,7 +145,7 @@ export default function Landing() {
             <div className="vl-two">
               <div>
                 <h2 id="h-vouch" className="vl-h2 vl-r" style={d('.06s')}>Someone puts <em className="vl-serif">their name</em> next to yours.</h2>
-                <p className="vl-body vl-r" style={d('.12s')}>Did the runs? Tell your verifier. They check, then sign your coins back to your refund address, fixed when you locked them. You don’t sign anything, and they can’t send the coins anywhere else. Use the Vouch demo verifier, or send a friend a link.</p>
+                <p className="vl-body vl-r" style={d('.12s')}>Did the runs? Tell your verifier. They check, then sign your coins back to your refund address, fixed when you locked them. You don’t sign anything, and they can’t send the coins anywhere else. On chipnet, practise with the Vouch demo verifier, or send a friend a link. On mainnet, name a friend or a group.</p>
                 <div className="vl-sign vl-r" style={d('.18s')} aria-label="How the refund gets signed">
                   <div className="vl-sign-line is-ask">
                     <p className="vl-ask-quote">“I did my runs. Sign it back to me, please.”</p>
@@ -162,12 +162,12 @@ export default function Landing() {
                 <article className="vl-card vl-r" style={d('.12s')}>
                   <p className="vl-card-kicker">Option one</p>
                   <h3>The Vouch demo verifier</h3>
-                  <p>It signs your refund when you say you kept your word. It works on the honour system, and it can’t break your pledge.</p>
-                  <p className="vl-code">server-side key · signs refunds only</p>
+                  <p>For chipnet practice: it signs your refund when you say you kept your word. Honour system, and it can’t break your pledge. On mainnet, name a friend or a group.</p>
+                  <p className="vl-code">server-side key · chipnet practice · signs refunds only</p>
                 </article>
                 <article className="vl-card vl-r" style={d('.2s')}>
                   <p className="vl-card-kicker">Option two</p>
-                  <h3>A friend with a link</h3>
+                  <h3>A friend or a group</h3>
                   <p>They open the link, check in on you, and sign the refund in their own wallet.</p>
                   <p className="vl-code">/verify#pledge=…</p>
                 </article>

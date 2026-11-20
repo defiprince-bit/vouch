@@ -14,6 +14,7 @@ import { useWallet } from '@/components/WalletProvider';
 import { anyPledgeContract, lockFromWallet, keepWithDemoVerifier, prepareVerifyRequest, breakFromWallet, settleExpiredPledge } from '@/lib/walletActions';
 import { verifyLink } from '@/lib/share';
 import { isQuorumPledge } from '@/lib/pledges';
+import { quorumLabel } from '@/lib/quorum';
 import { prepareQuorumRequest, progressOf } from '@/lib/quorumActions';
 import { useDemoVerifier } from '@/lib/useDemoVerifier';
 import { QuorumPanel } from './QuorumPanel';
@@ -40,7 +41,7 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
   const quorum = isQuorumPledge(pledge);
   const demo = useDemoVerifier(pledge.network);
   const isDemo = !quorum && pledge.verifierKind !== 'friend';
-  const verifierName = quorum ? `${pledge.threshold} of ${pledge.verifiers?.length ?? 0} verifiers` : isDemo ? 'Vouch demo' : (pledge.verifierName ?? 'Your friend');
+  const verifierName = quorum ? quorumLabel(pledge.threshold ?? 1, pledge.verifiers?.length ?? 0) : isDemo ? 'Vouch demo' : (pledge.verifierName ?? 'Your friend');
   const beneName = pledge.beneficiaryName ?? 'the beneficiary';
 
   // Mobile: the mock pins "Your move" to the bottom of the screen on the status page.
@@ -546,7 +547,9 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
                   </button>
                 </div>
                 <p className="hint" style={{ marginTop: 6 }}>
-                  {verifierName} opens this /verify#… link and signs the refund in their wallet. Pledge data stays in the hash, so it never reaches the server.
+                  {quorum
+                    ? 'Any of your verifiers opens this /verify#… link and signs the refund in their wallet. Pledge data stays in the hash, so it never reaches the server.'
+                    : `${verifierName} opens this /verify#… link and signs the refund in their wallet. Pledge data stays in the hash, so it never reaches the server.`}
                 </p>
               </div>
             )}

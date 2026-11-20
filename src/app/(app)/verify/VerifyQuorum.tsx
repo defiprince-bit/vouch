@@ -14,7 +14,7 @@ import { ConnectWallet } from '@/components/ConnectWallet';
 import { useWallet } from '@/components/WalletProvider';
 import { findWalletIndex } from '@/lib/walletActions';
 import { checkRequestSigs, quorumContract, quorumVerifyLink, slotLabels, encodeQuorumRequest, type QuorumVerifyRequest } from '@/lib/quorumShare';
-import { quorumPowerCopy } from '@/lib/quorum';
+import { quorumPowerCopy, quorumLabel, quorumSignVerb } from '@/lib/quorum';
 import { signQuorumSlot, demoQuorumSig, broadcastQuorumKeep, broadcastQuorumBreak } from '@/lib/quorumActions';
 
 type Done = { txid: string; kind: 'kept' | 'broken' };
@@ -92,11 +92,11 @@ export function VerifyQuorum({ initial }: { initial: QuorumVerifyRequest }) {
     }
   }
 
-  const title = done ? (done.kind === 'kept' ? 'Refund sent' : 'Ruled broken') : settled ? 'Already settled' : `Approve as one of ${n} verifiers`;
+  const title = done ? (done.kind === 'kept' ? 'Refund sent' : 'Ruled broken') : settled ? 'Already settled' : `Approve as one of ${n} ${n === 1 ? 'verifier' : 'verifiers'}`;
   const lede = done
-    ? done.kind === 'kept' ? `${m} of ${n} verifiers approved. The refund has been sent.` : `${m} of ${n} verifiers ruled it broken. The stake has been sent to ${beneName}.`
+    ? done.kind === 'kept' ? `${quorumLabel(m, n)} approved. The refund has been sent.` : `${quorumLabel(m, n)} ruled it broken. The stake has been sent to ${beneName}.`
     : settled ? 'The stake has already left this contract, so there’s nothing left to sign.'
-    : `This is a ${m}-of-${n} pledge. Any ${m} of the ${n} verifiers below must sign for your friend to get the stake back, and any ${m} of them can instead force a break that pays ${beneName}. Signatures are added one by one; the link carries them.`;
+    : `This is a ${m}-of-${n} pledge. Any ${m} of the ${n} ${n === 1 ? 'verifier' : 'verifiers'} below must ${quorumSignVerb(m)} for your friend to get the stake back, and any ${m} of them can instead force a break that pays ${beneName}. Signatures are added one by one; the link carries them.`;
 
   return (
     <>
@@ -126,10 +126,10 @@ export function VerifyQuorum({ initial }: { initial: QuorumVerifyRequest }) {
           beneficiaryAddr={shortAddr(p.beneficiaryAddress)}
           keepCopy={
             p.verifierRefund
-              ? `The ${stake} returns to your friend’s refund address once ${m} of ${n} verifiers sign. The address was fixed when they locked it.`
-              : `The ${stake} returns to your friend once ${m} of ${n} verifiers sign. Their own signature is already in this link.`
+              ? `The ${stake} returns to your friend’s refund address once ${quorumLabel(m, n)} ${quorumSignVerb(m)}. The address was fixed when they locked it.`
+              : `The ${stake} returns to your friend once ${quorumLabel(m, n)} ${quorumSignVerb(m)}. Their own signature is already in this link.`
           }
-          breakCopy={`Any ${m} of ${n} verifiers can force a break: the stake goes to ${beneName}.${m === 1 ? ' A single verifier is enough.' : ''} After the deadline anyone can settle it there.`}
+          breakCopy={`Any ${m} of ${n} ${n === 1 ? 'verifier' : 'verifiers'} can force a break: the stake goes to ${beneName}.${m === 1 ? ' A single verifier is enough.' : ''} After the deadline anyone can settle it there.`}
         />
 
         <aside className="sticky-aside">
