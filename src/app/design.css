@@ -1115,6 +1115,12 @@ body.is-shot .state-switcher { display: none !important; }
 
 /* Keep Review visible when the form grows (friend fields, errors) */
 @media (min-width: 901px) {
+  body.is-create #step-details {
+    padding-bottom: 8px;
+  }
+  body.is-create #step-details .form-section {
+    padding-bottom: 12px;
+  }
   body.is-create #step-details .form-actions {
     position: sticky;
     bottom: 0;
@@ -1123,6 +1129,19 @@ body.is-shot .state-switcher { display: none !important; }
     padding: 12px 0 16px;
     background: linear-gradient(to bottom, rgba(243,237,227,0), var(--paper) 28%);
   }
+  /* The mainnet warning + Blaze banner push the form down at 1440×900.
+     Tighten the details column so Friend/Group sit fully above the sticky CTA. */
+  body.is-create { scroll-padding-bottom: 88px; }
+  body.is-create .screen-head { padding-top: 6px; padding-bottom: 4px; margin-bottom: 8px; }
+  body.is-create .crumbs { margin-bottom: 6px; }
+  body.is-create .screen-head .lede { margin: 2px 0 0; }
+  body.is-create .field textarea { min-height: 40px; max-height: 64px; }
+  body.is-create .form-section { gap: 4px; }
+  body.is-create .choice-set legend { margin-bottom: 4px; }
+  body.is-create .callout.callout-warn { padding: 6px 12px; margin: 0; }
+  body.is-create .callout.callout-warn p { font-size: 0.8125rem; line-height: 1.3; }
+  body.is-create .choice { padding: 5px 10px; }
+  body.is-create .vis-note { margin-top: 2px; margin-bottom: 0; }
 }
 
 /* ===== Wall + stats strip (design/mocks/wall.html, stats-strip.html) ===== */

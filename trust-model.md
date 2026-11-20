@@ -7,6 +7,9 @@
 The parameters set the P2SH address, so every pledge gets its own address and none of these values can change later.
 
 ## Spend paths
+
+> **v1 design, superseded.** The table below is the original v1 design: verifier approval as a `checkDataSig` message over `"KEEP" ‖ pledgeId` or `"BREAK" ‖ pledgeId`. That scheme never shipped. New pledges use **v1.1** (`contracts/Vouch11.cash`) and **v2.1** (`contracts/VouchQuorum21.cash`), described in [v1.1 / v2.1: verifier-only refund](#v11--v21-verifier-only-refund-contractsvouch11cash-contractsvouchquorum21cash) below. On those contracts the verifier (or any M of N) signs the refund transaction itself with `checkSig`, and the staker does not sign. Older pledges locked under v1 / v2 still need the staker's signature on `keep`, but those refunds are also transaction signatures, not `checkDataSig` messages.
+
 | Path | Who authorizes | Where funds can go (enforced by covenant) | When |
 |---|---|---|---|
 | **keep** | staker sig **and** verifier `checkDataSig` over `"KEEP" ‖ pledgeId` | output at `activeInputIndex` = staker P2PKH | any time (see race below) |

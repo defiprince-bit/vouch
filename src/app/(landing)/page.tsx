@@ -123,7 +123,7 @@ export default function Landing() {
               <div>
                 <h2 id="h-promise" className="vl-h2 vl-r" style={d('.06s')}>Name it. Lock it. <em className="vl-serif">Pick who gets it.</em></h2>
                 <p className="vl-body vl-r" style={d('.12s')}>Name the habit, choose how much BCH to lock, and pick a deadline. Then name the person who gets the coins if you slip. That’s the whole promise.</p>
-                <p className="vl-foot-note vl-r" style={d('.18s')}>minimum stake 546 sats + network fee · verifier ≠ beneficiary</p>
+                <p className="vl-foot-note vl-r" style={d('.18s')}>minimum stake 5,000 sats · verifier ≠ beneficiary</p>
               </div>
               <article className="vl-deed vl-r" style={d('.12s')} aria-label="Example promise">
                 <p className="vl-deed-kicker">The promise</p>
@@ -194,7 +194,7 @@ export default function Landing() {
                 </div>
                 <ol className="vl-exits">
                   <li className="vl-r" style={d('.22s')}><b>Refund → you</b><span>Your verifier signs it back to your refund address.</span></li>
-                  <li className="vl-r is-forfeit" style={d('.3s')}><b>Break → Chidi</b><span>Only you can sign it, from your own wallet.</span></li>
+                  <li className="vl-r is-forfeit" style={d('.3s')}><b>Break → Chidi</b><span>You or your verifier can sign it (M of N in a group).</span></li>
                   <li className="vl-r is-forfeit" style={d('.38s')}><b>Forfeit → Chidi</b><span>Anyone can send it once the deadline passes.</span></li>
                 </ol>
               </div>
@@ -212,13 +212,13 @@ export default function Landing() {
                 <div className="vl-end-stamp" aria-hidden="true">Kept</div>
                 <p className="vl-card-kicker">You kept it</p>
                 <h3>The coins come back.</h3>
-                <p>You and your verifier sign, and the contract returns the stake to your wallet.</p>
+                <p>Your verifier signs the coins back to your wallet. You don’t need to sign.</p>
               </article>
               <article className="vl-end is-paid vl-r" style={d('.22s')}>
                 <div className="vl-end-stamp" aria-hidden="true">Paid</div>
                 <p className="vl-card-kicker">You broke it, or time ran out</p>
                 <h3>Chidi gets paid.</h3>
-                <p>Break it yourself, or miss the deadline, and the stake goes to the person you named. Vouch settles expiry on its own, with a Settle button as backup.</p>
+                <p>Break it early — you or your verifier — or miss the deadline, and the stake goes to the person you named. Vouch settles expiry on its own, with a Settle button as backup.</p>
               </article>
             </div>
             <p className="vl-foot-note vl-center vl-r" style={d('.3s')}>After the deadline a refund and a forfeit can race, so get it verified at least an hour before.</p>

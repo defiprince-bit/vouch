@@ -28,6 +28,10 @@ export function CreatePledgeForm() {
   const wallet = useWallet();
   const network = useNetwork();
   const demo = useDemoVerifier(network);
+  useEffect(() => {
+    document.body.classList.add('is-create');
+    return () => document.body.classList.remove('is-create');
+  }, []);
   const [step, setStep] = useState<Step>('details');
   const [habit, setHabit] = useState('');
   const [amount, setAmount] = useState('0.0001');
@@ -305,7 +309,7 @@ export function CreatePledgeForm() {
       {head}
       <div className="layout-2">
         {step === 'details' && (
-          <section>
+          <section id="step-details">
             <form className="form-section" onSubmit={review} noValidate>
               {network === 'mainnet' ? (
                 <div className="callout callout-warn" role="note" data-testid="mainnet-warning">
