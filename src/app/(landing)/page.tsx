@@ -7,6 +7,7 @@ import { NetworkBadge, NetworkName } from '@/components/NetworkBadge';
 import { REPO_URL } from '@/lib/config';
 import { LandingRoot } from './LandingRoot';
 import { LandingStats } from './LandingStats';
+import { TicketCountdown } from './TicketCountdown';
 import './landing.css';
 
 // Vouch landing v2 (design/mocks/landing.html). Every landing rule is .vl- prefixed or scoped
@@ -20,7 +21,7 @@ const newsreader = Newsreader({
 });
 
 export const metadata: Metadata = {
-  title: 'Vouch — Lock a little cash on a habit you’ll keep',
+  title: 'Vouch — Put your money where your mouth is',
 };
 
 /** Reveal delay for a .vl-r element. */
@@ -68,8 +69,8 @@ export default function Landing() {
           <div className="wrap vl-hero-grid">
             <div className="vl-hero-copy">
               <p className="vl-eyebrow vl-r">Bitcoin Cash · <NetworkName /></p>
-              <h1 id="h-hero" className="vl-r" style={d('.08s')}>Lock a little cash on a habit <em className="vl-serif">you’ll keep.</em></h1>
-              <p className="vl-lede vl-r" style={d('.16s')}>Keep your word and the coins come back to you. Break it, or let the deadline pass, and they go to someone you chose.</p>
+              <h1 id="h-hero" className="vl-r" style={d('.08s')}>Put your money where <em className="vl-serif">your mouth is.</em></h1>
+              <p className="vl-lede vl-r" style={d('.16s')}>Deliver, and you get your money back. Don’t, and your coins go to whoever you picked.</p>
               <div className="vl-cta vl-r" style={d('.24s')}>
                 <Link className="btn btn-primary btn-lg" href="/create">Open app</Link>
                 <a className="btn btn-ghost btn-lg" href="#promise">How it works</a>
@@ -89,20 +90,20 @@ export default function Landing() {
                   <div className="ticket-top">
                     <div>
                       <p className="ticket-kicker">Pledge ticket</p>
-                      <p className="example-tag">Example only — not a live pledge</p>
                     </div>
                     <div className="stamp" aria-hidden="true">Active</div>
                   </div>
-                  <h2 className="ticket-habit">Run three mornings this week.</h2>
+                  <TicketCountdown />
+                  <h2 className="ticket-habit">Go for 3 runs before the clock hits zero.</h2>
                   <div className="ticket-grid">
                     <div><p className="field-label">Stake</p><p className="field-value">0.05 BCH</p></div>
-                    <div><p className="field-label">Deadline</p><p className="field-value">27 Nov 2026, 23:59 WAT</p></div>
+                    <div><p className="field-label">Deadline</p><p className="field-value">In under 4 hours</p></div>
                     <div><p className="field-label">Verifiers</p><p className="field-value">2 of 3 friends</p><p className="addr">Amaka · Tunde · Ife</p></div>
                     <div><p className="field-label">Beneficiary</p><p className="field-value">Chidi</p><p className="addr">bitcoincash:p…</p></div>
                   </div>
                   <div className="ticket-outcomes">
                     <p className="outcome"><b>If you keep it</b> Coins return to you once you and any 2 of your 3 verifiers sign.</p>
-                    <p className="outcome is-forfeit"><b>If you don’t</b> The 0.05 BCH is paid to Chidi. Same if time runs out.</p>
+                    <p className="outcome is-forfeit"><b>If you don’t</b> When the clock hits zero, the 0.05 BCH goes to Chidi.</p>
                   </div>
                 </div>
               </article>
@@ -120,7 +121,7 @@ export default function Landing() {
             <div className="vl-rule vl-r"><span>§ 01 · The promise</span><i></i><svg className="vl-seal vl-seal-sm" viewBox="0 0 120 120" aria-hidden="true"><use href="#vseal"/></svg></div>
             <div className="vl-two">
               <div>
-                <h2 id="h-promise" className="vl-h2 vl-r" style={d('.06s')}>Say what you’ll do. <em className="vl-serif">Put money on it.</em></h2>
+                <h2 id="h-promise" className="vl-h2 vl-r" style={d('.06s')}>Name it. Lock it. <em className="vl-serif">Pick who gets it.</em></h2>
                 <p className="vl-body vl-r" style={d('.12s')}>Name the habit, choose how much BCH to lock, and pick a deadline. Then name the person who gets the coins if you slip. That’s the whole promise.</p>
                 <p className="vl-foot-note vl-r" style={d('.18s')}>minimum stake 546 sats + network fee · verifier ≠ beneficiary</p>
               </div>

@@ -1,6 +1,6 @@
 # Vouch
 
-**Stake BCH on a habit. Keep the streak, the covenant returns your coins. Break it, the stake pays someone else.**
+**Put your money where your mouth is.** Deliver, and you get your money back. Don’t, and your coins go to whoever you picked.
 
 A CashScript covenant on Bitcoin Cash + a Next.js app. Built for BCH BLAZE 2026 (Mainnet track). Chipnet by default; mainnet only with `NEXT_PUBLIC_BCH_NETWORK=mainnet`, dust amounts only.
 

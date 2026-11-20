@@ -477,3 +477,62 @@ html.vl-revealed .vl-rule i {
    The mock's ticket relies on the browser's default <p> margins, which Tailwind's preflight
    resets in the app; restore them here so the hero ticket matches the approved shots. */
 .vl-hero-ticket .example-tag, .vl-hero-ticket .ticket-grid .addr { margin: 1em 0; }
+
+/* ——— One heading font (organiser feedback: the Syne + italic serif mix was hard to read) ———
+   Every landing heading is Figtree, the same face as the body. The highlighted phrase keeps
+   only its colour: same family, same weight, upright. */
+.vl-hero h1, .vl-h2, .vl-close-h, .vl-card h3, .vl-end h3 {
+  font-family: var(--font-sans);
+  letter-spacing: -0.03em;
+}
+.vl-hero h1 { font-weight: 800; line-height: 1.02; max-width: 13ch; }
+.vl-hero h1 .vl-serif, .vl-h2 .vl-serif, .vl-close-h .vl-accent {
+  font-family: inherit;
+  font-style: normal;
+  font-weight: inherit;
+  font-size: 1em;
+  letter-spacing: inherit;
+}
+.vl-hero h1 .vl-serif { display: inline; }
+
+/* ——— Ticket countdown + runs ——— */
+.vl-countdown { margin: 6px 0 16px; padding: 14px 16px 12px; border: 1.5px dashed var(--ink); border-radius: 12px; background: var(--paper, #F3EDE3); }
+.vl-countdown-time { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.vl-countdown-digits {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: clamp(2.1rem, 4.4vw, 3rem);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--forfeit, #B4472E);
+  font-variant-numeric: tabular-nums;
+}
+.vl-countdown-unit { font-family: var(--font-mono); font-size: 14px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); }
+.vl-runs { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.vl-runs-label { margin: 0; font-family: var(--font-sans); font-weight: 800; font-size: 1.05rem; color: var(--ink); white-space: nowrap; }
+.vl-runs-boxes { list-style: none; margin: 0; padding: 0; display: flex; gap: 8px; }
+.vl-runs-boxes li {
+  position: relative;
+  width: 46px; height: 46px;
+  display: grid; place-items: center;
+  border: 2px dashed var(--ink-muted);
+  border-radius: 9px;
+  color: var(--ink-muted);
+  background: var(--white, #fff);
+}
+.vl-runs-boxes li.is-done { border: 2px solid var(--mint-deep); background: var(--mint-deep); color: var(--white, #fff); }
+.vl-run-check {
+  position: absolute; right: -7px; bottom: -7px;
+  width: 20px; height: 20px; padding: 3px;
+  border-radius: 50%;
+  background: var(--ink); color: var(--white, #fff);
+}
+.vl-anim .vl-runs-boxes li:not(.is-done) { animation: vl-run-wait 1.6s ease-in-out infinite; }
+.vl-anim .vl-runs-boxes li:nth-child(3):not(.is-done) { animation-delay: 0.3s; }
+@keyframes vl-run-wait { 0%, 100% { border-color: var(--ink-muted); } 50% { border-color: var(--forfeit, #B4472E); } }
+@media (prefers-reduced-motion: reduce) { .vl-runs-boxes li { animation: none !important; } }
+.vl-still .vl-runs-boxes li { animation: none !important; }
+@media (max-width: 900px) {
+  .vl-countdown-digits { font-size: clamp(2rem, 10vw, 2.6rem); }
+}
+.vl-hero-ticket .ticket-habit { font-family: var(--font-sans); font-weight: 800; letter-spacing: -0.02em; }

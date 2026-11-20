@@ -5,7 +5,7 @@ import { Banner } from '@/components/Banner';
 import { WalletProvider } from '@/components/WalletProvider';
 
 const syne = Syne({ subsets: ['latin'], variable: '--font-syne', weight: ['600', '700', '800'] });
-const figtree = Figtree({ subsets: ['latin'], variable: '--font-figtree', weight: ['400', '500', '600', '700'] });
+const figtree = Figtree({ subsets: ['latin'], variable: '--font-figtree', weight: ['400', '500', '600', '700', '800'] });
 const dmMono = DM_Mono({ subsets: ['latin'], variable: '--font-dm-mono', weight: ['400', '500'] });
 
 // Landing (/) only: pick the motion mode before first paint so revealed sections don't flash.
@@ -16,8 +16,19 @@ const dmMono = DM_Mono({ subsets: ['latin'], variable: '--font-dm-mono', weight:
 const LANDING_MOTION_SCRIPT = `(function(){try{if(location.pathname!=='/')return;var h=document.documentElement;var q=new URLSearchParams(location.search);var s=q.has('static')||q.has('shot')||matchMedia('(prefers-reduced-motion: reduce)').matches;h.classList.add(s?'vl-still':'vl-anim');if(!s)setTimeout(function(){if(!h.classList.contains('vl-motion-ready'))h.classList.add('vl-revealed');},1200);}catch(e){}})();`;
 
 export const metadata: Metadata = {
-  title: 'Vouch: stake BCH on a habit',
-  description: 'Stake BCH on a habit. Keep the streak, the covenant returns your coins. Break it, the stake pays someone else.',
+  title: 'Vouch: put your money where your mouth is',
+  description: 'Put your money where your mouth is. Lock BCH on a promise: deliver, and you get your money back. Don’t, and your coins go to whoever you picked.',
+  openGraph: {
+    title: 'Vouch: put your money where your mouth is',
+    description: 'Deliver, and you get your money back. Don’t, and your coins go to whoever you picked. A CashScript covenant on Bitcoin Cash.',
+    siteName: 'Vouch',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'Vouch: put your money where your mouth is',
+    description: 'Deliver, and you get your money back. Don’t, and your coins go to whoever you picked.',
+  },
   icons: {
     icon: [
       { url: '/brand/favicon.svg', type: 'image/svg+xml' },
