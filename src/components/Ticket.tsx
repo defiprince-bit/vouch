@@ -11,6 +11,8 @@ export interface TicketProps {
   deadline: string;
   verifier: string;
   verifierNote?: string;
+  /** Label for the party field. Defaults to "Verifier". On the verify page, pass "Staker". */
+  partyLabel?: string;
   beneficiary: string;
   beneficiaryAddr?: string;
   keepCopy: ReactNode;
@@ -44,7 +46,7 @@ export function Ticket(p: TicketProps) {
             <p className="field-value">{p.deadline}</p>
           </div>
           <div>
-            <p className="field-label">Verifier</p>
+            <p className="field-label">{p.partyLabel ?? 'Verifier'}</p>
             <p className="field-value">{p.verifier}</p>
             {p.verifierNote && <p className="footnote">{p.verifierNote}</p>}
           </div>

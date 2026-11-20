@@ -156,7 +156,8 @@ function VerifyV1({ hash, parsed }: { hash: string | null; parsed: { req: Verify
           habit={p.promise}
           stake={stake}
           deadline={deadlineMs ? formatDateTime(deadlineMs) : `Block ${p.deadline}`}
-          verifier="Your friend (staker)"
+          partyLabel="Staker"
+          verifier="Your friend"
           verifierNote={shortAddr(stakerAddr)}
           beneficiary={p.beneficiaryName ?? 'Beneficiary'}
           beneficiaryAddr={shortAddr(p.beneficiaryAddress)}
