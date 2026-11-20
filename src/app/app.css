@@ -9,9 +9,82 @@
 /* Hero ~20% smaller than the mock so the three steps sit above the fold at 1440x900. */
 .hero h1 { font-size: calc(var(--fs-hero) * 0.8); }
 
-/* Banner inside a flex layout; long addresses wrap. */
-.banner .addr { word-break: break-all; }
+/* Banner: static when the row fits; CSS marquee when it overflows (narrow viewports). */
+.banner {
+  overflow: hidden;
+  max-width: 100%;
+}
+.banner-viewport {
+  overflow: hidden;
+  width: 100%;
+}
+.banner-track {
+  display: flex;
+  align-items: center;
+  width: max-content;
+  max-width: 100%;
+}
+.banner-inner {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+.banner-clone { display: none; }
+.banner .addr {
+  word-break: normal;
+  overflow-wrap: normal;
+  user-select: all;
+}
 .banner .todo { margin-left: 2px; }
+
+@media (max-width: 1279px) {
+  .banner-track { max-width: none; }
+  .banner-inner {
+    max-width: none;
+    margin: 0;
+  }
+  .banner-clone { display: flex; }
+  .banner-track {
+    animation: vouch-banner-marquee 32s linear infinite;
+  }
+  .banner:hover .banner-track,
+  .banner:focus-within .banner-track {
+    animation-play-state: paused;
+  }
+  /* Snap the interactive (first) copy into view so keyboard users can reach the links. */
+  .banner:focus-within .banner-track {
+    animation: none;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes vouch-banner-marquee {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-50%, 0, 0); }
+}
+
+/* Global design.css already kills animations under reduced motion; keep the row reachable. */
+@media (prefers-reduced-motion: reduce) {
+  .banner-clone { display: none !important; }
+  .banner-track {
+    animation: none !important;
+    transform: none !important;
+    width: 100%;
+    max-width: 100%;
+  }
+  .banner-viewport {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+  .banner-inner {
+    flex-wrap: wrap;
+    white-space: normal;
+    max-width: 100%;
+    margin: 0 auto;
+  }
+  .banner .addr { word-break: break-all; }
+}
 
 /* Explorer tx links: always visible, full-width tap target. */
 .tx-link { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; padding: 12px 14px; border: 1.5px solid var(--mint-deep); border-radius: 10px; background: var(--keep-tint); text-decoration: none; color: var(--ink); }
