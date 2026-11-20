@@ -10,6 +10,7 @@ export function Header() {
         <Logo />
         <div className="nav-actions">
           <NetworkBadge />
+          <NavLink href="/" className="nav-home">Home</NavLink>
           <NavLink href="/wall">Wall</NavLink>
           <NavLink href="/pledges">My pledges</NavLink>
           <NavLink href="/create">New pledge</NavLink>

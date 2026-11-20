@@ -989,6 +989,12 @@ body.is-shot .state-switcher { display: none !important; }
   .wordmark { display: none; }
   .nav-actions { gap: 8px; }
   .nav-actions .btn-ghost { display: none; }
+  /* Keep a visible Home control on small screens; other section links stay hidden so the badge and wallet fit. */
+  .nav-actions .nav-home {
+    display: inline-flex;
+    padding: 0 12px;
+    min-height: 36px;
+  }
   .wallet-chip { max-width: none; }
   .wallet-chip .addr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .wallet-chip .chip-label { display: inline; }
@@ -1029,6 +1035,19 @@ body.is-shot .state-switcher { display: none !important; }
 @media (max-width: 420px) {
   .hero-cta .btn, .form-actions .btn { width: 100%; }
   .wordmark { font-size: 1.1rem; }
+  /* Compact the app header so Home, the network badge, and the wallet button stay on one row. */
+  .nav-inner { padding-left: 12px; padding-right: 12px; gap: 8px; }
+  .nav-actions { gap: 6px; }
+  .nav-actions .nav-home {
+    padding: 0 10px;
+    min-height: 32px;
+    font-size: 0.8125rem;
+  }
+  .nav-actions > .btn-primary {
+    padding: 0 10px;
+    min-height: 36px;
+    font-size: 0.8125rem;
+  }
 }
 
 @media (max-width: 900px) {
