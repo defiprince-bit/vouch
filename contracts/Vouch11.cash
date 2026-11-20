@@ -1,0 +1,55 @@
+pragma cashscript ^0.14.0;
+
+// Vouch v1.1 pledge covenant (trust model: ../trust-model.md, "v1.1 / v2.1: verifier-only refund").
+// Same as contracts/Vouch.cash except `keep`: the verifier alone signs the refund. The staker
+// doesn't sign: the refund destination is fixed at lock time (the staker's P2PKH, derived from
+// the stakerPk constructor arg), so the verifier can only ever send the coins back to the staker.
+// Pledges locked under contracts/Vouch.cash keep using that artifact (their address commits to it).
+//
+//   keep            verifier sig                 -> stake returns to the staker's P2PKH
+//   breakByStaker   staker sig (admits it)       -> stake goes to the beneficiary
+//   breakByVerifier verifier sig                 -> stake goes to the beneficiary
+//   forfeit         no signature, after deadline -> stake goes to the beneficiary
+//
+// Every path pins its payout to tx.outputs[this.activeInputIndex] and caps the fee at maxFee,
+// exactly like v1. A verifier signature uses SIGHASH_ALL | SIGHASH_UTXOS, so it commits to the
+// outpoint and to the outputs: a keep signature can't be replayed against another pledge or
+// turned into a break (whose output pays a different locking bytecode).
+contract Vouch11(
+    pubkey stakerPk,
+    pubkey verifierPk,
+    bytes beneficiaryLock,
+    int deadline, // nLocktime: block height if < 500000000, else MTP unix seconds
+    bytes16 pledgeId,
+    int maxFee
+) {
+    function keep(sig verifierSig) {
+        require(checkSig(verifierSig, verifierPk));
+        int i = this.activeInputIndex;
+        require(tx.outputs[i].lockingBytecode == new LockingBytecodeP2PKH(hash160(stakerPk)));
+        require(tx.outputs[i].value >= tx.inputs[i].value - maxFee);
+    }
+
+    function breakByStaker(sig stakerSig) {
+        require(checkSig(stakerSig, stakerPk));
+        int i = this.activeInputIndex;
+        require(tx.outputs[i].lockingBytecode == beneficiaryLock);
+        require(tx.outputs[i].value >= tx.inputs[i].value - maxFee);
+    }
+
+    function breakByVerifier(sig verifierSig) {
+        require(checkSig(verifierSig, verifierPk));
+        int i = this.activeInputIndex;
+        require(tx.outputs[i].lockingBytecode == beneficiaryLock);
+        require(tx.outputs[i].value >= tx.inputs[i].value - maxFee);
+    }
+
+    function forfeit() {
+        require(tx.time >= deadline);
+        int i = this.activeInputIndex;
+        require(tx.outputs[i].lockingBytecode == beneficiaryLock);
+        require(tx.outputs[i].value >= tx.inputs[i].value - maxFee);
+        // pledgeId only needs to be part of the address; touch it so it's not an unused param.
+        require(pledgeId.length == 16);
+    }
+}

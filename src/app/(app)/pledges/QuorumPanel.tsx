@@ -12,16 +12,24 @@ import {
   slotLabels,
   type QuorumVerifyRequest,
 } from '@/lib/quorumShare';
-import { quorumTerms, progressOf, demoQuorumSig, broadcastQuorumKeep, broadcastQuorumBreak } from '@/lib/quorumActions';
+import { quorumTerms, progressOf, demoQuorumSig, broadcastQuorumKeep, broadcastQuorumBreak, stakerProofOf } from '@/lib/quorumActions';
 import { QUORUM_FEE } from '@/lib/quorum';
 import { shortAddr } from '@/lib/format';
 import { stakerP2pkhAddress } from '@/lib/vouch';
 import { hexToBin } from '@bitauth/libauth';
 
-/** The pledge's saved progress as a request (null until the staker has pre-signed). */
+/** The pledge's saved progress as a request (null until the link exists; v2: until the staker has pre-signed). */
 export function savedRequest(p: StoredPledge): QuorumVerifyRequest | null {
-  if (!p.quorum?.stakerSig) return null;
-  return { v: 2, pledge: quorumTerms(p), utxo: p.quorum.utxo, fee: QUORUM_FEE.toString(), stakerSig: p.quorum.stakerSig, keepSigs: p.quorum.keepSigs, breakSigs: p.quorum.breakSigs };
+  if (!p.quorum || (!p.verifierRefund && !p.quorum.stakerSig)) return null;
+  return {
+    v: 2,
+    pledge: quorumTerms(p),
+    utxo: p.quorum.utxo,
+    fee: QUORUM_FEE.toString(),
+    stakerSig: p.verifierRefund ? '' : p.quorum.stakerSig!,
+    keepSigs: p.quorum.keepSigs,
+    breakSigs: p.quorum.breakSigs,
+  };
 }
 
 export function QuorumPanel(props: {
@@ -138,7 +146,7 @@ export function QuorumPanel(props: {
             disabled={note.trim().length < 3 || !!busy}
             onClick={() =>
               act('Demo', async () => {
-                const st = save(await demoQuorumSig(req, note));
+                const st = save(await demoQuorumSig(req, note, pledge.verifierRefund ? stakerProofOf(pledge) : null));
                 setMsg(`The demo verifier approved. ${st.keepCount} of ${m}.`);
               })
             }
@@ -181,7 +189,13 @@ export function QuorumPanel(props: {
           </div>
         </div>
       )}
-      {active && !req && <p className="hint" style={{ marginTop: 10 }}>Tap “I kept it” to pre-sign your refund and get the signing link.</p>}
+      {active && !req && (
+        <p className="hint" style={{ marginTop: 10 }}>
+          {pledge.verifierRefund
+            ? `Tap “I kept it” to get the signing link. You don’t sign: any ${m} of your verifiers sign the refund back to your address.`
+            : 'Tap “I kept it” to pre-sign your refund and get the signing link.'}
+        </p>
+      )}
       {state && state.dropped.length > 0 && <p className="error-text">Dropped {state.dropped.length} signature(s) that didn’t check out.</p>}
       {msg && <p className={/^(Added|The demo|No new)/.test(msg) ? 'ok-text' : 'error-text'}>{msg}</p>}
     </div>

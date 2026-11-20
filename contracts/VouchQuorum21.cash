@@ -1,0 +1,88 @@
+pragma cashscript ^0.14.0;
+
+// Vouch v2.1 pledge covenant: an M-of-N verifier quorum (N = 1..5, M = 1..N) where the verifiers
+// alone sign the refund. Same as contracts/VouchQuorum.cash except `keep` takes no staker
+// signature: the refund destination is fixed at lock time (the staker's P2PKH, derived from the
+// stakerPk constructor arg), so M verifiers can only ever send the coins back to the staker.
+// Pledges locked under contracts/VouchQuorum.cash keep using that artifact.
+// Design notes: ../trust-model.md ("v2: verifier quorum", "v1.1 / v2.1: verifier-only refund").
+//
+//   keep            any M verifier sigs              -> stake returns to the staker's P2PKH
+//   breakByStaker   staker sig (admits it)           -> stake goes to the beneficiary
+//   breakByVerifier any M verifier sigs              -> stake goes to the beneficiary
+//   forfeit         no signature, after deadline     -> stake goes to the beneficiary
+//
+// Five fixed verifier slots v0..v4. A pledge with N < 5 fills slots N..4 with unspendable keys
+// (02 || sha256("vouch/unused-verifier-slot/<i>"), so nobody knows a private key for them).
+// Each slot is matched to its own signature argument, so:
+//   * a verifier can only ever be counted once (their sig only verifies against their own slot);
+//   * a slot that hasn't signed passes an EMPTY signature: checkSig(0x, pk) is false and, by the
+//     NULLFAIL rule, any non-empty invalid signature fails the whole script instead of counting 0.
+// We count with checkSig instead of checkMultiSig because wallets produce Schnorr signatures, which
+// CashScript's checkMultiSig doesn't cover, and the threshold has to be a constructor parameter.
+//
+// Every path pins its payout to tx.outputs[this.activeInputIndex], caps the fee at maxFee (both
+// exactly like v1, contracts/Vouch.cash), and keeps the token category: the payout output must carry
+// the same token category as the pledge input (none, for every stake the app creates), so a spend
+// can't strip CashTokens off a pledge UTXO or mint them onto the payout.
+contract VouchQuorum21(
+    pubkey stakerPk,
+    pubkey v0,
+    pubkey v1,
+    pubkey v2,
+    pubkey v3,
+    pubkey v4,
+    int threshold, // M, 1..5
+    bytes beneficiaryLock,
+    int deadline, // nLocktime: block height if < 500000000, else MTP unix seconds
+    bytes16 pledgeId,
+    int maxFee
+) {
+    function keep(sig s0, sig s1, sig s2, sig s3, sig s4) {
+        int n = 0;
+        if (checkSig(s0, v0)) { n = n + 1; }
+        if (checkSig(s1, v1)) { n = n + 1; }
+        if (checkSig(s2, v2)) { n = n + 1; }
+        if (checkSig(s3, v3)) { n = n + 1; }
+        if (checkSig(s4, v4)) { n = n + 1; }
+        require(threshold > 0);
+        require(n >= threshold);
+        int i = this.activeInputIndex;
+        require(tx.outputs[i].lockingBytecode == new LockingBytecodeP2PKH(hash160(stakerPk)));
+        require(tx.outputs[i].value >= tx.inputs[i].value - maxFee);
+        require(tx.outputs[i].tokenCategory == tx.inputs[i].tokenCategory);
+    }
+
+    function breakByStaker(sig stakerSig) {
+        require(checkSig(stakerSig, stakerPk));
+        int i = this.activeInputIndex;
+        require(tx.outputs[i].lockingBytecode == beneficiaryLock);
+        require(tx.outputs[i].value >= tx.inputs[i].value - maxFee);
+        require(tx.outputs[i].tokenCategory == tx.inputs[i].tokenCategory);
+    }
+
+    function breakByVerifier(sig s0, sig s1, sig s2, sig s3, sig s4) {
+        int n = 0;
+        if (checkSig(s0, v0)) { n = n + 1; }
+        if (checkSig(s1, v1)) { n = n + 1; }
+        if (checkSig(s2, v2)) { n = n + 1; }
+        if (checkSig(s3, v3)) { n = n + 1; }
+        if (checkSig(s4, v4)) { n = n + 1; }
+        require(threshold > 0);
+        require(n >= threshold);
+        int i = this.activeInputIndex;
+        require(tx.outputs[i].lockingBytecode == beneficiaryLock);
+        require(tx.outputs[i].value >= tx.inputs[i].value - maxFee);
+        require(tx.outputs[i].tokenCategory == tx.inputs[i].tokenCategory);
+    }
+
+    function forfeit() {
+        require(tx.time >= deadline);
+        int i = this.activeInputIndex;
+        require(tx.outputs[i].lockingBytecode == beneficiaryLock);
+        require(tx.outputs[i].value >= tx.inputs[i].value - maxFee);
+        require(tx.outputs[i].tokenCategory == tx.inputs[i].tokenCategory);
+        // pledgeId only needs to be part of the address; touch it so it's not an unused param.
+        require(pledgeId.length == 16);
+    }
+}

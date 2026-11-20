@@ -32,6 +32,8 @@ export type QuorumTerms = Pick<
   Partial<Pick<StoredPledge, 'beneficiaryName' | 'deadlineAt'>> & {
     verifiers: Array<Pick<QuorumVerifier, 'pubkey' | 'name'>>;
     threshold: number;
+    /** v2.1: M verifiers alone sign the refund (contracts/VouchQuorum21.cash). Part of the address. */
+    verifierRefund?: true;
   };
 
 export interface QuorumVerifyRequest {
@@ -39,7 +41,7 @@ export interface QuorumVerifyRequest {
   pledge: QuorumTerms;
   utxo: { txid: string; vout: number; satoshis: string };
   fee: string;
-  /** Staker's signature over the deterministic keep tx (hex). */
+  /** v2: the staker's signature over the deterministic keep tx (hex). v2.1: '' (verifiers only). */
   stakerSig: string;
   /** Per verifier slot: hex keep signature, or null. */
   keepSigs: Array<string | null>;
@@ -67,7 +69,10 @@ export function decodeAnyVerifyRequest(fragment: string): AnyVerifyRequest {
   }
   if (raw?.v !== 2) return decodeVerifyRequest(fragment);
   const r = raw as QuorumVerifyRequest;
-  if (!r.pledge || !r.utxo || !SIG.test(r.stakerSig ?? '') || !/^[0-9a-f]{64}$/i.test(r.utxo.txid ?? '')) throw new Error('Invalid verify link');
+  if (!r.pledge || !r.utxo || !/^[0-9a-f]{64}$/i.test(r.utxo.txid ?? '')) throw new Error('Invalid verify link');
+  if (r.pledge.verifierRefund !== undefined && r.pledge.verifierRefund !== true) throw new Error('Invalid verify link');
+  if (r.pledge.verifierRefund) r.stakerSig = '';
+  else if (!SIG.test(r.stakerSig ?? '')) throw new Error('Invalid verify link');
   const p = r.pledge;
   if (!Array.isArray(p.verifiers)) throw new Error('Invalid verify link');
   const issues = quorumShapeIssues(p.stakerPubkey ?? '', p.verifiers.map((v) => v?.pubkey ?? ''), p.threshold);
@@ -89,7 +94,10 @@ export function quorumVerifyLink(origin: string, r: QuorumVerifyRequest): string
   return `${origin}/verify#pledge=${encodeQuorumRequest(r)}`;
 }
 
-export function quorumContract(p: Pick<QuorumTerms, 'stakerPubkey' | 'verifiers' | 'threshold' | 'beneficiaryAddress' | 'deadline' | 'id' | 'network'>, provider?: NetworkProvider) {
+export function quorumContract(
+  p: Pick<QuorumTerms, 'stakerPubkey' | 'verifiers' | 'threshold' | 'beneficiaryAddress' | 'deadline' | 'id' | 'network' | 'verifierRefund'>,
+  provider?: NetworkProvider,
+) {
   return createQuorumContract(
     {
       stakerPubkey: hexToBin(p.stakerPubkey),
@@ -98,6 +106,7 @@ export function quorumContract(p: Pick<QuorumTerms, 'stakerPubkey' | 'verifiers'
       beneficiaryAddress: p.beneficiaryAddress,
       deadline: p.deadline,
       pledgeId: p.id,
+      verifierRefund: p.verifierRefund === true,
     },
     provider ?? getProvider(p.network),
   );
@@ -118,6 +127,8 @@ export function requestSpends(r: Pick<QuorumVerifyRequest, 'pledge' | 'utxo' | '
     fee,
     stakerAddress,
     keepSighash: () => spendSighash(contract, buildQuorumKeep({ ...base, stakerSig: placeholderSignature(), verifierSigs: [], stakerAddress })),
+    /** v2.1: the refund needs no staker signature. */
+    verifierRefund: r.pledge.verifierRefund === true,
     breakSighash: () => spendSighash(contract, buildQuorumBreakByVerifier({ ...base, verifierSigs: [], beneficiaryAddress: r.pledge.beneficiaryAddress })),
   };
 }
@@ -127,6 +138,7 @@ export interface QuorumState {
   breakSigs: Array<string | null>;
   keepCount: number;
   breakCount: number;
+  /** v2: the staker's pre-signature checks out. v2.1: always true (there is none to check). */
   stakerSigOk: boolean;
   /** Slots whose signature in the link was invalid and got dropped. */
   dropped: number[];
@@ -147,7 +159,7 @@ export function checkRequestSigs(r: QuorumVerifyRequest, provider?: NetworkProvi
     breakSigs,
     keepCount: keepSigs.filter(Boolean).length,
     breakCount: breakSigs.filter(Boolean).length,
-    stakerSigOk: isValidSpendSig(keepHash, hexToBin(r.stakerSig), hexToBin(r.pledge.stakerPubkey)),
+    stakerSigOk: s.verifierRefund || (SIG.test(r.stakerSig ?? '') && isValidSpendSig(keepHash, hexToBin(r.stakerSig), hexToBin(r.pledge.stakerPubkey))),
     dropped,
   };
 }

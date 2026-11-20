@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "compile:contract": "cashc contracts/Vouch.cash --format ts -o src/lib/Vouch.artifact.ts && cashc contracts/Vouch.cash -o contracts/Vouch.json && cashc contracts/VouchQuorum.cash --format ts -o src/lib/VouchQuorum.artifact.ts && cashc contracts/VouchQuorum.cash -o contracts/VouchQuorum.json",
+    "compile:contract": "cashc contracts/Vouch.cash --format ts -o src/lib/Vouch.artifact.ts && cashc contracts/Vouch.cash -o contracts/Vouch.json && cashc contracts/VouchQuorum.cash --format ts -o src/lib/VouchQuorum.artifact.ts && cashc contracts/VouchQuorum.cash -o contracts/VouchQuorum.json && cashc contracts/Vouch11.cash --format ts -o src/lib/Vouch11.artifact.ts && cashc contracts/Vouch11.cash -o contracts/Vouch11.json && cashc contracts/VouchQuorum21.cash --format ts -o src/lib/VouchQuorum21.artifact.ts && cashc contracts/VouchQuorum21.cash -o contracts/VouchQuorum21.json",
     "keys": "tsx scripts/keys.mts",
     "chipnet:status": "tsx scripts/chipnet.mts status",
     "chipnet:run": "tsx scripts/chipnet.mts run",

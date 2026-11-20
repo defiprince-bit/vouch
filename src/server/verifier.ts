@@ -14,6 +14,7 @@ import {
   type BchNetwork,
 } from '@/lib/vouch';
 import { checkAddress } from '@/lib/network';
+import { secretMatchesPledge } from '@/lib/listSecret';
 import { createQuorumContract, slotSignature, buildQuorumForfeit, quorumShapeIssues, QUORUM_FEE } from '@/lib/quorum';
 
 export interface PledgeTerms {
@@ -25,6 +26,11 @@ export interface PledgeTerms {
   network: BchNetwork;
   /** v2 (VouchQuorum) only. */
   version?: 2;
+  /**
+   * v1.1 / v2.1: the verifier(s) alone sign the refund (contracts/Vouch11.cash,
+   * contracts/VouchQuorum21.cash). Missing = the original contracts. Part of the contract address.
+   */
+  verifierRefund?: true;
   verifierPubkeys?: string[];
   threshold?: number;
 }
@@ -65,6 +71,8 @@ export function parseTerms(t: unknown): PledgeTerms {
   } else if (p.version !== undefined && (p.version as number) !== 1) {
     throw new VerifierError('Unknown pledge version');
   }
+  if (p.verifierRefund !== undefined && typeof p.verifierRefund !== 'boolean') throw new VerifierError('Bad contract version');
+  if (!p.verifierRefund) delete p.verifierRefund;
   if (!hex33.test(p.stakerPubkey ?? '') || !hex33.test(p.verifierPubkey ?? '')) throw new VerifierError('Bad pubkeys');
   if (p.network !== 'chipnet' && p.network !== 'mainnet') throw new VerifierError('Bad network');
   if (typeof p.beneficiaryAddress !== 'string') throw new VerifierError('Bad beneficiary');
@@ -83,6 +91,7 @@ async function loadPledge(termsIn: unknown, provider: NetworkProvider) {
       beneficiaryAddress: terms.beneficiaryAddress,
       deadline: terms.deadline,
       pledgeId: terms.id,
+      verifierRefund: terms.verifierRefund === true,
     },
     provider,
   );
@@ -107,6 +116,7 @@ async function loadQuorumPledge(terms: PledgeTerms, provider: NetworkProvider) {
       beneficiaryAddress: terms.beneficiaryAddress,
       deadline: terms.deadline,
       pledgeId: terms.id,
+      verifierRefund: terms.verifierRefund === true,
     },
     provider,
   );
@@ -118,8 +128,15 @@ const utxoJson = (u: SpendableUtxo) => ({ txid: u.txid, vout: u.vout, satoshis: 
 /**
  * Demo verifier approves a keep. Rules: the pledge names this verifier, the requester confirmed
  * and described what they did, and it's before deadline - ~1h.
+ * v1 / v2 (the refund also needs the staker's signature, so that signature is the staker's consent):
  * - With `stakerSig` (staker signed first): assemble the full keep and broadcast it now.
  * - Without: return the verifier signature; the staker's wallet completes and broadcasts.
+ * v1.1 / v2.1 (the verifiers alone sign the refund): the request must carry the staker proof, the
+ * listSecret the pledge id commits to (src/lib/listSecret.ts), which only the browser that made the
+ * pledge holds. Otherwise anyone who knows a pledge's terms (they're on the wall) could make the
+ * demo verifier end it early. The secret is checked and dropped, never stored or logged.
+ * - v1.1: the demo verifier's signature is the whole refund, so it's broadcast now.
+ * - v2.1: return its slot signature; the client broadcasts once M are in.
  */
 export interface KeepApproval {
   txid?: string;
@@ -131,7 +148,7 @@ export interface KeepApproval {
 }
 
 export async function approveKeep(
-  body: { pledge: unknown; confirm?: boolean; note?: string; stakerSig?: string },
+  body: KeepBody,
   provider: NetworkProvider,
   key: SignatureTemplate,
 ): Promise<KeepApproval> {
@@ -140,6 +157,9 @@ export async function approveKeep(
   }
   const terms0 = parseTerms(body.pledge);
   if (!demoVerifierAllowed(terms0.network)) throw new VerifierError(DEMO_MAINNET_REFUSED, 403);
+  if (terms0.verifierRefund && !secretMatchesPledge(body.listSecret, body.listNonce, body.habit, terms0.id)) {
+    throw new VerifierError(STAKER_PROOF_REQUIRED, 403);
+  }
   if (terms0.version === 2) return approveQuorumKeep(terms0, provider, key);
   const { terms, contract, utxo } = await loadPledge(body.pledge, provider);
   if (terms.verifierPubkey.toLowerCase() !== verifierPubkeyHex(key)) {
@@ -150,6 +170,10 @@ export async function approveKeep(
     throw new VerifierError(`Too late: keep must be approved before block ${verifyByHeight(terms.deadline)} (now ${height})`, 409);
   }
   const stakerAddress = stakerP2pkhAddress(hexToBin(terms.stakerPubkey), terms.network);
+  if (terms.verifierRefund) {
+    const tx = await buildKeep({ contract, provider, utxo, verifierSig: key, stakerAddress }).send();
+    return { txid: tx.txid, utxo: utxoJson(utxo) };
+  }
   if (body.stakerSig) {
     if (!/^[0-9a-f]{130}$/i.test(body.stakerSig)) throw new VerifierError('Bad staker signature');
     const tx = await buildKeep({ contract, provider, utxo, stakerSig: hexToBin(body.stakerSig), verifierSig: key, stakerAddress }).send();
@@ -177,6 +201,20 @@ async function approveQuorumKeep(terms: PledgeTerms, provider: NetworkProvider, 
   return { slot, verifierSig: binToHex(sig), utxo: utxoJson(utxo), fee: QUORUM_FEE.toString() };
 }
 
+export const STAKER_PROOF_REQUIRED =
+  'Only the staker can ask the demo verifier for this refund: ask from the pledge page in the browser you made the pledge in.';
+
+/** What a demo-verifier keep request carries. listSecret / listNonce / habit: the v1.1 / v2.1 staker proof. */
+export interface KeepBody {
+  pledge: unknown;
+  confirm?: boolean;
+  note?: string;
+  stakerSig?: string;
+  listSecret?: unknown;
+  listNonce?: unknown;
+  habit?: unknown;
+}
+
 export const DEMO_MAINNET_REFUSED = 'The Vouch demo verifier is chipnet-only. On mainnet, name a friend as your verifier.';
 
 /**
@@ -189,7 +227,7 @@ export const DEMO_BREAK_REFUSED =
   'The demo verifier never signs a break. To break your own pledge, sign "I broke it" in your wallet; after the deadline anyone can settle it to the beneficiary.';
 
 export async function demoVerifierAction(
-  body: { action?: string; pledge: unknown; confirm?: boolean; note?: string; stakerSig?: string },
+  body: KeepBody & { action?: string },
   provider: NetworkProvider,
   key: SignatureTemplate,
 ) {

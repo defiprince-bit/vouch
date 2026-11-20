@@ -536,3 +536,8 @@ html.vl-revealed .vl-rule i {
   .vl-countdown-digits { font-size: clamp(2rem, 10vw, 2.6rem); }
 }
 .vl-hero-ticket .ticket-habit { font-family: var(--font-sans); font-weight: 800; letter-spacing: -0.02em; }
+/* The staker's line is a request, not a signature: a spoken quote instead of a scribble. */
+.vl-sign-line.is-ask .vl-ask-quote {
+  border-top: 0; padding: 0 0 8px;
+  font-family: var(--font-sans); font-size: 1.15rem; font-weight: 600; line-height: 1.3; color: var(--ink);
+}

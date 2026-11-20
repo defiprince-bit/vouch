@@ -23,6 +23,13 @@ export interface StoredPledge {
    * `verifierPubkey` mirrors verifiers[0] so older display code keeps working.
    */
   version?: 1 | 2;
+  /**
+   * true = the verifier-only-refund contract of this version: v1.1 (contracts/Vouch11.cash) or
+   * v2.1 (contracts/VouchQuorum21.cash). The verifier(s) alone sign the refund, which can only pay
+   * the staker's P2PKH. Missing = the original contract, where the refund also needs the staker's
+   * signature (every pledge made before v1.1 / v2.1; the flag is part of what rebuilds its address).
+   */
+  verifierRefund?: true;
   verifiers?: QuorumVerifier[];
   threshold?: number;
   /** v2: signatures collected so far (link relay), all bound to `utxo`. */
@@ -33,7 +40,8 @@ export interface StoredPledge {
    * Wall listing proof (src/lib/listSecret.ts): 32-byte hex secret and 16-byte hex nonce made at
    * create time; the pledge id commits to nonce, habit (`promise`) and sha256(listSecret). Lives
    * ONLY in this browser's storage: never in a verify link, share URL, or anything sent anywhere
-   * except POST /api/wall. Missing on pledges made before this existed (they can't be listed).
+   * except POST /api/wall and, for v1.1 / v2.1 demo-verifier refunds, POST /api/verifier (checked as
+   * the staker's proof, never stored). Missing on pledges made before this existed (they can't be listed).
    */
   listSecret?: string;
   listNonce?: string;
@@ -188,6 +196,7 @@ export function normalizePledge(v: unknown): StoredPledge | null {
   const outcome = oneOf(v.outcome, ['kept', 'broken', 'settled'] as const);
   if (outcome) out.outcome = outcome;
   if (version) out.version = version;
+  if (v.verifierRefund === true) out.verifierRefund = true;
   if (verifiers) out.verifiers = verifiers;
   if (threshold) out.threshold = threshold;
   if (quorum) out.quorum = quorum;

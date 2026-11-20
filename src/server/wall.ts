@@ -120,6 +120,7 @@ export async function listPledge(input: ListInput, deps: ListDeps): Promise<{ pl
     beneficiaryAddress: raw.beneficiaryAddress,
     stakerPubkey,
     network: raw.network,
+    ...(raw.verifierRefund === true ? { verifierRefund: true } : {}),
     ...(quorum
       ? { version: 2, verifierPubkeys: Array.isArray(raw.verifierPubkeys) ? raw.verifierPubkeys.map((v) => str(v).toLowerCase()) : [], threshold: raw.threshold }
       : { verifierPubkey: str(raw.verifierPubkey).toLowerCase() }),
@@ -181,6 +182,7 @@ function storedTerms(t: PledgeTerms): PledgeTerms {
     stakerPubkey: t.stakerPubkey,
     verifierPubkey: t.verifierPubkey,
     network: t.network,
+    ...(t.verifierRefund ? { verifierRefund: true as const } : {}),
     ...(t.version === 2 ? { version: 2 as const, verifierPubkeys: t.verifierPubkeys, threshold: t.threshold } : {}),
   };
 }

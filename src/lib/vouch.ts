@@ -7,6 +7,7 @@ import {
   type NetworkProvider,
   type SpendableUtxo,
   type SignatureTemplate,
+  type Unlocker,
 } from 'cashscript';
 import { getProvider as getNetworkProvider, type BchNetwork } from './providers';
 import { keepSignaturesFromTx } from './wc';
@@ -20,6 +21,7 @@ import {
   CashAddressType,
 } from '@bitauth/libauth';
 import artifact from './Vouch.artifact';
+import artifact11 from './Vouch11.artifact';
 import { activeNetwork, checkAddress } from './network';
 
 export type { BchNetwork } from './providers';
@@ -44,6 +46,12 @@ export interface PledgeParams {
   /** 16 random bytes, hex. Makes every pledge address unique. */
   pledgeId: string;
   maxFee?: bigint;
+  /**
+   * Contract version. true = v1.1 (contracts/Vouch11.cash): the verifier alone signs the refund.
+   * Missing/false = v1 (contracts/Vouch.cash): the refund needs the staker's and the verifier's
+   * signatures. Pledges locked before v1.1 existed have no flag, so they rebuild their old address.
+   */
+  verifierRefund?: boolean;
 }
 
 /** Active network: the browser's saved choice, else NEXT_PUBLIC_BCH_NETWORK (chipnet by default). */
@@ -108,7 +116,7 @@ export function createPledgeContract(params: PledgeParams, provider: NetworkProv
   if (pledgeId.length !== 16) throw new Error('pledgeId must be 16 bytes');
   const maxFee = params.maxFee ?? DEFAULT_MAX_FEE;
   return new Contract(
-    artifact,
+    params.verifierRefund ? artifact11 : artifact,
     [
       params.stakerPubkey,
       params.verifierPubkey,
@@ -136,10 +144,27 @@ interface SpendBase {
   fee?: bigint;
 }
 
-/** keep: staker + verifier sign; the covenant only lets coins return to the staker's P2PKH. */
-export function buildKeep(o: SpendBase & { stakerSig: Signer; verifierSig: Signer; stakerAddress: string }) {
+/** Does this contract's keep take a staker signature? (v1 / v2 yes; v1.1 / v2.1 no: verifiers only.) */
+export function keepNeedsStaker(contract: { artifact: { abi: ReadonlyArray<{ name: string; inputs: ReadonlyArray<{ name: string }> }> } }): boolean {
+  const keep = contract.artifact.abi.find((f) => f.name === 'keep');
+  return !!keep?.inputs.some((i) => i.name === 'stakerSig');
+}
+
+/**
+ * keep: the covenant only lets coins return to the staker's P2PKH.
+ * v1: staker + verifier sign. v1.1: the verifier alone (`stakerSig` is ignored, and may be left out).
+ */
+export function buildKeep(o: SpendBase & { stakerSig?: Signer; verifierSig: Signer; stakerAddress: string }) {
+  let unlocker;
+  if (keepNeedsStaker(o.contract)) {
+    if (!o.stakerSig) throw new Error('This pledge’s refund needs the staker’s signature');
+    unlocker = o.contract.unlock.keep(o.stakerSig, o.verifierSig);
+  } else {
+    // v1.1 artifact: keep(verifierSig). The contract is typed from the v1 artifact, hence the cast.
+    unlocker = (o.contract.unlock.keep as unknown as (verifierSig: Signer) => Unlocker)(o.verifierSig);
+  }
   return new TransactionBuilder({ provider: o.provider })
-    .addInput(o.utxo, o.contract.unlock.keep(o.stakerSig, o.verifierSig))
+    .addInput(o.utxo, unlocker)
     .addOutput({ to: o.stakerAddress, amount: payout(o.utxo, o.fee ?? DEFAULT_FEE) });
 }
 
@@ -196,9 +221,9 @@ export function buildLock<T extends SpendableUtxo & { address?: string }>(o: {
 }
 
 /**
- * Demo/server verifier, verifier-first: sign the deterministic keep tx (staker slot = placeholder)
- * and return only the verifier's signature. The staker's wallet then fills its own placeholder
- * and broadcasts.
+ * Demo/server verifier, verifier-first: sign the deterministic keep tx (v1: staker slot =
+ * placeholder) and return only the verifier's signature. v1: the staker's wallet then fills its own
+ * placeholder and broadcasts. v1.1: that signature alone completes the refund.
  */
 export function verifierKeepSignature(o: {
   contract: PledgeContract;

@@ -115,7 +115,7 @@ describe('wallet + verifier flows', () => {
     const signed = mockWalletSign(toWcSignRequest(pre, [[0, 'receive', 0]], { broadcast: false, userPrompt: 'Keep' }), stakerWallet);
     const { stakerSig, verifierSig } = keepSignaturesFromTx(signed);
     expect(binToHex(verifierSig)).toBe(binToHex(DUMMY_SIGNATURE)); // wallet left the dummy alone
-    const res = await approveKeep({ pledge: terms, confirm: true, note: 'done', stakerSig: binToHex(stakerSig) }, provider, demoKey);
+    const res = await approveKeep({ pledge: terms, confirm: true, note: 'done', stakerSig: binToHex(stakerSig!) }, provider, demoKey);
     expect(res.txid).toHaveLength(64);
     expect((await provider.getUtxos(stakerAddress))[0].satoshis).toBe(STAKE - DEFAULT_FEE);
   });
@@ -130,7 +130,7 @@ describe('wallet + verifier flows', () => {
       pledge: { ...terms, promise: 'Run 5k', stakeSats: STAKE.toString(), contractAddress: contract.address },
       utxo: { txid: utxo.txid, vout: utxo.vout, satoshis: utxo.satoshis.toString() },
       fee: DEFAULT_FEE.toString(),
-      stakerSig: binToHex(stakerSig),
+      stakerSig: binToHex(stakerSig!),
     };
     const url = verifyLink('https://app.example', link);
     expect(url).toMatch(/^https:\/\/app\.example\/verify#pledge=[A-Za-z0-9_-]+$/);

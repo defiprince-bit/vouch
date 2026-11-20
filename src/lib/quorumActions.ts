@@ -35,6 +35,7 @@ export function quorumTerms(p: StoredPledge): QuorumTerms {
     network: p.network,
     verifiers: p.verifiers.map((v) => ({ pubkey: v.pubkey, ...(v.name ? { name: v.name } : {}) })),
     threshold: p.threshold,
+    ...(p.verifierRefund ? { verifierRefund: true as const } : {}),
     ...(p.beneficiaryName ? { beneficiaryName: p.beneficiaryName } : {}),
     ...(p.deadlineAt ? { deadlineAt: p.deadlineAt } : {}),
   };
@@ -55,10 +56,11 @@ async function lockedUtxo(p: StoredPledge): Promise<SpendableUtxo> {
 }
 
 /**
- * Staker pre-signs the refund (every verifier slot empty) and gets the share link payload.
+ * The share link payload. v2: the staker pre-signs the refund (every verifier slot empty). v2.1:
+ * no wallet signature at all (`manager` may be null): the verifiers alone sign the refund.
  * Signatures already collected for the same UTXO are kept.
  */
-export async function prepareQuorumRequest(manager: DappConnectionManager, p: StoredPledge): Promise<QuorumVerifyRequest> {
+export async function prepareQuorumRequest(manager: DappConnectionManager | null, p: StoredPledge): Promise<QuorumVerifyRequest> {
   const utxo = await lockedUtxo(p);
   const utxoJson = { txid: utxo.txid, vout: utxo.vout, satoshis: utxo.satoshis.toString() };
   const n = p.verifiers!.length;
@@ -73,6 +75,8 @@ export async function prepareQuorumRequest(manager: DappConnectionManager, p: St
     breakSigs: same ? p.quorum!.breakSigs.slice(0, n) : Array(n).fill(null),
   };
   const s = requestSpends(base);
+  if (s.verifierRefund) return base;
+  if (!manager) throw new Error('Connect your wallet to pre-sign your refund');
   if (same && p.quorum!.stakerSig && isValidSpendSig(s.keepSighash(), hexToBin(p.quorum!.stakerSig), hexToBin(p.stakerPubkey))) {
     return { ...base, stakerSig: p.quorum!.stakerSig };
   }
@@ -96,7 +100,7 @@ export async function signQuorumSlot(manager: DappConnectionManager, r: QuorumVe
   verifierSigs[slot] = placeholderSignature();
   const builder =
     kind === 'keep'
-      ? buildQuorumKeep({ ...s, stakerSig: hexToBin(r.stakerSig), verifierSigs })
+      ? buildQuorumKeep({ ...s, stakerSig: s.verifierRefund ? undefined : hexToBin(r.stakerSig), verifierSigs })
       : buildQuorumBreakByVerifier({ ...s, verifierSigs, beneficiaryAddress: r.pledge.beneficiaryAddress });
   const prompt =
     kind === 'keep'
@@ -112,12 +116,21 @@ export async function signQuorumSlot(manager: DappConnectionManager, r: QuorumVe
   return { ...r, [key]: next } as QuorumVerifyRequest;
 }
 
-/** Ask the Vouch demo verifier for its signature on its slot (keep only). */
-export async function demoQuorumSig(r: QuorumVerifyRequest, note: string): Promise<QuorumVerifyRequest> {
+/**
+ * Staker proof for the demo verifier on v1.1 / v2.1 pledges: the pledge id commits to this
+ * browser's listSecret (src/lib/listSecret.ts). With no staker signature on the refund, this is
+ * what stops anyone else who knows the terms from asking the demo verifier to end the pledge.
+ */
+export type StakerProof = { listSecret: string; listNonce: string; habit: string };
+export const stakerProofOf = (p: Pick<StoredPledge, 'listSecret' | 'listNonce' | 'promise'>): StakerProof | null =>
+  p.listSecret && p.listNonce ? { listSecret: p.listSecret, listNonce: p.listNonce, habit: p.promise } : null;
+
+/** Ask the Vouch demo verifier for its signature on its slot (keep only). v2.1 needs the staker's proof. */
+export async function demoQuorumSig(r: QuorumVerifyRequest, note: string, proof?: StakerProof | null): Promise<QuorumVerifyRequest> {
   const res = await fetch('/api/verifier', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ action: 'keep', pledge: { ...r.pledge, version: 2 }, confirm: true, note }),
+    body: JSON.stringify({ action: 'keep', pledge: { ...r.pledge, version: 2 }, confirm: true, note, ...(proof ?? {}) }),
   });
   const j = (await res.json()) as { verifierSig?: string; slot?: number; utxo?: { txid: string; vout: number }; error?: string };
   if (!res.ok || !j.verifierSig || j.slot === undefined) throw new Error(j.error ?? 'The demo verifier refused');
@@ -137,7 +150,7 @@ export async function broadcastQuorumKeep(r: QuorumVerifyRequest): Promise<{ txi
   if (!st.stakerSigOk) throw new Error('The staker’s signature in this link is invalid');
   if (st.keepCount < r.pledge.threshold) throw new Error(`${st.keepCount} of ${r.pledge.threshold} approvals so far`);
   const s = requestSpends(r);
-  const hex = buildQuorumKeep({ ...s, stakerSig: hexToBin(r.stakerSig), verifierSigs: st.keepSigs.map(hexOrNull) }).build();
+  const hex = buildQuorumKeep({ ...s, stakerSig: s.verifierRefund ? undefined : hexToBin(r.stakerSig), verifierSigs: st.keepSigs.map(hexOrNull) }).build();
   return { txid: await sendHex(s.provider, hex) };
 }
 

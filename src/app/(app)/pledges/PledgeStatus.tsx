@@ -90,6 +90,9 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
   const tooLateToVerify = height !== null && height >= verifyBy;
   const connected = wallet.state === 'connected' && !!wallet.manager;
   const mine = netOk && connected && wallet.stakerPubkeyHex === pledge.stakerPubkey;
+  // v1.1 / v2.1: the verifier(s) alone sign the refund, so asking for it needs no wallet. Break still does.
+  const vr = pledge.verifierRefund === true;
+  const canKeep = vr ? netOk : mine;
 
   const record = useCallback(
     (id: string, patch: Partial<StoredPledge>) => {
@@ -140,17 +143,17 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
   }
 
   async function askFriend() {
-    if (!wallet.manager) return;
+    if (!wallet.manager && !vr) return;
     setBusy('Keep');
     setMsg(null);
     try {
       if (quorum) {
-        const q = await prepareQuorumRequest(wallet.manager, pledge);
+        const q = await prepareQuorumRequest(wallet.manager ?? null, pledge);
         savePledge({ ...pledge, quorum: progressOf(q) });
-        setMsg('Refund pre-signed. Share the signing link below with your verifiers.');
+        setMsg(vr ? 'Signing link ready. Share it below with your verifiers.' : 'Refund pre-signed. Share the signing link below with your verifiers.');
         return;
       }
-      const req = await prepareVerifyRequest(wallet.manager, pledge);
+      const req = await prepareVerifyRequest(wallet.manager ?? null, pledge);
       setShareUrl(verifyLink(window.location.origin, req));
     } catch (e) {
       setMsg((e as Error).message);
@@ -202,7 +205,9 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
     : phase === 'expired'
       ? `The deadline passed. Vouch is settling the forfeit to ${beneName}.`
       : outcome === 'kept'
-        ? 'You and the verifier signed the refund. The stake was returned.'
+        ? vr
+          ? 'Your verifier signed the refund. The stake was returned to you.'
+          : 'You and the verifier signed the refund. The stake was returned.'
         : outcome === 'broken'
           ? `You forfeited before the deadline. The stake was paid to ${beneName}.`
           : outcome === 'settled'
@@ -284,7 +289,13 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
               <>
                 <div className="callout">
                   <strong>Wallet not connected</strong>
-                  <p>Connect with WizardConnect to sign {phase === 'unfunded' ? 'the lock' : 'Keep or Break'}.</p>
+                  <p>
+                    {phase === 'unfunded'
+                      ? 'Connect with WizardConnect to sign the lock.'
+                      : vr
+                        ? 'You don’t need it to get your refund: your verifier signs that. Connect with WizardConnect only to sign Break.'
+                        : 'Connect with WizardConnect to sign Keep or Break.'}
+                  </p>
                 </div>
                 <ConnectWallet size="lg" />
               </>
@@ -292,7 +303,7 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
             {netOk && (phase === 'active' || phase === 'unfunded') && connected && !mine && (
               <div className="callout">
                 <strong>Different wallet</strong>
-                <p>This wallet isn’t the staker on this pledge. Connect the wallet that created it.</p>
+                <p>This wallet isn’t the staker on this pledge. Connect the wallet that created it{vr && phase === 'active' ? ' to sign Break. Asking for your refund needs no signature from you.' : '.'}</p>
               </div>
             )}
 
@@ -315,19 +326,27 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
               </div>
             )}
 
-            {phase === 'active' && mine && busy && (
+            {phase === 'active' && canKeep && busy && (
               <div className="callout">
-                <strong>Waiting for a signature</strong>
-                <p>Approve the {busy.toLowerCase()} in your wallet.</p>
+                <strong>{vr && busy !== 'Break' ? 'Working on it' : 'Waiting for a signature'}</strong>
+                <p>{vr && busy !== 'Break' ? (isDemo ? 'Asking the demo verifier to sign your refund…' : 'Making your signing link…') : `Approve the ${busy.toLowerCase()} in your wallet.`}</p>
               </div>
             )}
 
-            {phase === 'active' && mine && !busy && !confirming && (
+            {phase === 'active' && canKeep && !busy && !confirming && (
               <>
                 <div className="action-bar actions-stack">
                   <button className="btn btn-keep btn-lg" type="button" disabled={tooLateToVerify} onClick={isDemo ? () => setConfirming(true) : askFriend}>
-                    {isDemo ? 'I kept it — request refund' : quorum ? (pledge.quorum?.stakerSig ? 'Refresh my signing link' : `I kept it — ask ${pledge.threshold} of ${pledge.verifiers?.length} to sign`) : `I kept it — ask ${verifierName} to sign`}
+                    {isDemo
+                      ? 'I kept it — request refund'
+                      : quorum
+                        ? (vr ? pledge.quorum : pledge.quorum?.stakerSig)
+                          ? 'Refresh my signing link'
+                          : `I kept it — ask ${pledge.threshold} of ${pledge.verifiers?.length} to sign`
+                        : `I kept it — ask ${verifierName} to sign`}
                   </button>
+                  {vr && <p className="footnote" style={{ marginTop: -4 }}>No signature from you: {isDemo ? 'the verifier signs' : quorum ? 'they sign' : `${verifierName} signs`} it back to your refund address.</p>}
+                  {mine && (
                   <div>
                     <button
                       className="btn btn-danger btn-lg btn-block"
@@ -347,6 +366,7 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
                       You sign this yourself.
                     </p>
                   </div>
+                  )}
                 </div>
                 {tooLateToVerify && (
                   <p className="confirm-note" style={{ marginTop: 8 }}>
@@ -356,7 +376,7 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
               </>
             )}
 
-            {phase === 'active' && mine && !busy && confirming && (
+            {phase === 'active' && canKeep && !busy && confirming && (
               <div className="confirm-box">
                 <label htmlFor="keep-note">What did you do?</label>
                 <textarea id="keep-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ran on Monday, Wednesday and Friday." />
@@ -372,12 +392,12 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
                       setConfirming(false);
                       void run(
                         'Refund',
-                        () => keepWithDemoVerifier(wallet.manager!, pledge, note),
+                        () => keepWithDemoVerifier(wallet.manager ?? null, pledge, note),
                         () => ({ outcome: 'kept' }),
                       );
                     }}
                   >
-                    I confirm — sign the refund
+                    {vr ? 'I confirm — ask for my refund' : 'I confirm — sign the refund'}
                   </button>
                   <button className="btn btn-ghost" type="button" onClick={() => setConfirming(false)}>
                     Cancel
@@ -440,7 +460,7 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
               </div>
             )}
 
-            {msg && <p className={msg.endsWith('sent.') || msg.startsWith('Refund pre-signed') ? 'ok-text' : 'error-text'}>{msg}</p>}
+            {msg && <p className={msg.endsWith('sent.') || msg.startsWith('Refund pre-signed') || msg.startsWith('Signing link ready') ? 'ok-text' : 'error-text'}>{msg}</p>}
             {pledge.lastTxid && <TxLink txid={pledge.lastTxid} network={pledge.network} label={outcome === 'kept' ? 'Refund tx' : outcome ? 'Payout tx' : 'Latest tx'} />}
           </div>
         </aside>
@@ -457,7 +477,7 @@ export function PledgeStatus({ pledge }: { pledge: StoredPledge }) {
           verifier={verifierName}
           beneficiary={pledge.beneficiaryName ?? 'Beneficiary'}
           beneficiaryAddr={shortAddr(pledge.beneficiaryAddress)}
-          keepCopy="Coins return to you after you sign and the verifier signs the refund in their wallet."
+          keepCopy={vr ? 'Your verifier signs it back to your refund address. You don’t need to sign.' : 'Coins return to you after you sign and the verifier signs the refund in their wallet.'}
           breakCopy={`Paid to ${beneName}. Same if the deadline passes.`}
         />
 

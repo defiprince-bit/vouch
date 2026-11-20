@@ -160,7 +160,11 @@ function VerifyV1({ hash, parsed }: { hash: string | null; parsed: { req: Verify
           verifierNote={shortAddr(stakerAddr)}
           beneficiary={p.beneficiaryName ?? 'Beneficiary'}
           beneficiaryAddr={shortAddr(p.beneficiaryAddress)}
-          keepCopy={`The ${stake} returns to your friend. Their signature is already on this refund.`}
+          keepCopy={
+            p.verifierRefund
+              ? `The ${stake} returns to your friend’s refund address, fixed when they locked it. Your signature is all it needs.`
+              : `The ${stake} returns to your friend. Their signature is already on this refund.`
+          }
           breakCopy={`After the deadline, anyone can settle the forfeit to ${beneName}.`}
         />
 
@@ -181,6 +185,11 @@ function VerifyV1({ hash, parsed }: { hash: string | null; parsed: { req: Verify
                 </p>
                 {settled ? (
                   <div className="callout"><strong>Nothing to sign</strong><p>This pledge has already been settled.</p></div>
+                ) : isDemoVerifier && p.verifierRefund ? (
+                  <div className="callout">
+                    <strong>The staker asks the demo verifier</strong>
+                    <p>This pledge uses the Vouch demo verifier. Your friend asks it for the refund from their own pledge page; there’s nothing to sign here.</p>
+                  </div>
                 ) : isDemoVerifier ? (
                   <>
                     <button className="btn btn-keep btn-lg btn-block" type="button" disabled={blocked} onClick={demoApprove}>

@@ -71,7 +71,7 @@ if (mode === 'all' || mode === 'keep2') {
   const b = await newLockedPledge(demoPub, height + 100);
   const pre = buildKeep({ contract: b.contract, provider, utxo: b.utxo, stakerSig: placeholderSignature(), verifierSig: DUMMY_SIGNATURE, stakerAddress: staker.address });
   const { stakerSig } = keepSignaturesFromTx(mockWalletSign(toWcSignRequest(pre, [[0, 'receive', 0]], { broadcast: false, userPrompt: 'pre-sign' }), { 'receive/0': staker.priv }));
-  const r2 = await api<{ txid: string }>('/api/verifier', { action: 'keep', pledge: b.terms, confirm: true, note: 'e2e via link', stakerSig: binToHex(stakerSig) });
+  const r2 = await api<{ txid: string }>('/api/verifier', { action: 'keep', pledge: b.terms, confirm: true, note: 'e2e via link', stakerSig: binToHex(stakerSig!) });
   out.push(`keep (staker pre-signed, demo verifier broadcast) ${r2.txid}`);
 }
 if (mode === 'all' || mode === 'settle') {

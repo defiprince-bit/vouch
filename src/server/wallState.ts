@@ -38,12 +38,20 @@ export function contractForTerms(t: PledgeTerms, provider: NetworkProvider) {
         beneficiaryAddress: t.beneficiaryAddress,
         deadline: t.deadline,
         pledgeId: t.id,
+        verifierRefund: t.verifierRefund === true,
       },
       provider,
     );
   }
   return createPledgeContract(
-    { stakerPubkey: hexToBin(t.stakerPubkey), verifierPubkey: hexToBin(t.verifierPubkey), beneficiaryAddress: t.beneficiaryAddress, deadline: t.deadline, pledgeId: t.id },
+    {
+      stakerPubkey: hexToBin(t.stakerPubkey),
+      verifierPubkey: hexToBin(t.verifierPubkey),
+      beneficiaryAddress: t.beneficiaryAddress,
+      deadline: t.deadline,
+      pledgeId: t.id,
+      verifierRefund: t.verifierRefund === true,
+    },
     provider,
   );
 }
@@ -57,7 +65,7 @@ function pushes(b: Uint8Array): Uint8Array[] {
   });
 }
 
-/** Both contracts order their functions the same way. */
+/** Every contract version (v1, v1.1, v2, v2.1) orders its functions the same way. */
 const FN = { keep: 0, breakByStaker: 1, breakByVerifier: 2, forfeit: 3 } as const;
 
 /** Which function a spend used and how many verifier signatures it carried. */

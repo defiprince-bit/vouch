@@ -124,7 +124,11 @@ export function VerifyQuorum({ initial }: { initial: QuorumVerifyRequest }) {
           verifierNote={shortAddr(stakerAddr)}
           beneficiary={p.beneficiaryName ?? 'Beneficiary'}
           beneficiaryAddr={shortAddr(p.beneficiaryAddress)}
-          keepCopy={`The ${stake} returns to your friend once ${m} of ${n} verifiers sign. Their own signature is already in this link.`}
+          keepCopy={
+            p.verifierRefund
+              ? `The ${stake} returns to your friend’s refund address once ${m} of ${n} verifiers sign. The address was fixed when they locked it.`
+              : `The ${stake} returns to your friend once ${m} of ${n} verifiers sign. Their own signature is already in this link.`
+          }
           breakCopy={`Any ${m} of ${n} verifiers can force a break: the stake goes to ${beneName}.${m === 1 ? ' A single verifier is enough.' : ''} After the deadline anyone can settle it there.`}
         />
 
@@ -196,7 +200,10 @@ export function VerifyQuorum({ initial }: { initial: QuorumVerifyRequest }) {
                   </button>
                 ) : (
                   <div className="actions-stack" style={{ display: 'grid', gap: 10 }}>
-                    {demoSlot && demo.enabled && (
+                    {demoSlot && demo.enabled && p.verifierRefund && (
+                      <p className="footnote">The Vouch demo verifier is one of the {n}. Your friend asks it to sign from their own pledge page.</p>
+                    )}
+                    {demoSlot && demo.enabled && !p.verifierRefund && (
                       <button className="btn btn-ghost btn-block" type="button" disabled={blocked} onClick={() => go('demo', async () => addAndMaybeSend(await demoQuorumSig(r, 'approved via quorum verify link'), 'keep'))}>
                         {busy === 'demo' ? 'Asking…' : 'Add the Vouch demo verifier’s approval'}
                       </button>

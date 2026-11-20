@@ -102,7 +102,7 @@ export default function Landing() {
                     <div><p className="field-label">Beneficiary</p><p className="field-value">Chidi</p><p className="addr">bitcoincash:p…</p></div>
                   </div>
                   <div className="ticket-outcomes">
-                    <p className="outcome"><b>If you keep it</b> Coins return to you once you and any 2 of your 3 verifiers sign.</p>
+                    <p className="outcome"><b>If you keep it</b> Any 2 of your 3 verifiers sign it back to you. You don’t sign.</p>
                     <p className="outcome is-forfeit"><b>If you don’t</b> When the clock hits zero, the 0.05 BCH goes to Chidi.</p>
                   </div>
                 </div>
@@ -145,17 +145,16 @@ export default function Landing() {
             <div className="vl-two">
               <div>
                 <h2 id="h-vouch" className="vl-h2 vl-r" style={d('.06s')}>Someone puts <em className="vl-serif">their name</em> next to yours.</h2>
-                <p className="vl-body vl-r" style={d('.12s')}>Getting your coins back takes two signatures: yours and your verifier’s. Use the Vouch demo verifier, or send a friend a link.</p>
-                <div className="vl-sign vl-r" style={d('.18s')} aria-label="Signatures on the refund">
-                  <div className="vl-sign-line">
-                    <svg className="vl-scribble" viewBox="0 0 220 48" aria-hidden="true"><path d="M6 34c12-20 20-26 24-18s-6 22 2 20 14-30 22-26-4 24 4 22 12-16 18-14 2 12 10 10 10-10 16-8c8 3 14 6 30 2 14-4 30-10 50-12" /></svg>
-                    <span className="vl-cover" aria-hidden="true"></span>
-                    <p><b>You</b> sign the refund in your wallet</p>
+                <p className="vl-body vl-r" style={d('.12s')}>Did the runs? Tell your verifier. They check, then sign your coins back to your refund address, fixed when you locked them. You don’t sign anything, and they can’t send the coins anywhere else. Use the Vouch demo verifier, or send a friend a link.</p>
+                <div className="vl-sign vl-r" style={d('.18s')} aria-label="How the refund gets signed">
+                  <div className="vl-sign-line is-ask">
+                    <p className="vl-ask-quote">“I did my runs. Sign it back to me, please.”</p>
+                    <p><b>You</b> ask. No signature needed from you</p>
                   </div>
                   <div className="vl-sign-line is-second">
                     <svg className="vl-scribble" viewBox="0 0 220 48" aria-hidden="true"><path d="M8 30c8-8 16-22 26-20s-4 26 6 24 16-28 26-22-2 18 6 18 14-12 22-10 6 10 14 8c10-3 22-14 34-12s18 10 30 8c10-2 22-8 40-10" /></svg>
                     <span className="vl-cover" aria-hidden="true"></span>
-                    <p><b>Your verifier</b> co-signs it</p>
+                    <p><b>Your verifier</b> checks, then signs it back to you</p>
                   </div>
                 </div>
               </div>
@@ -163,8 +162,8 @@ export default function Landing() {
                 <article className="vl-card vl-r" style={d('.12s')}>
                   <p className="vl-card-kicker">Option one</p>
                   <h3>The Vouch demo verifier</h3>
-                  <p>It co-signs when you say you kept your word. It works on the honour system, and it can’t break your pledge.</p>
-                  <p className="vl-code">server-side key · co-signs refunds only</p>
+                  <p>It signs your refund when you say you kept your word. It works on the honour system, and it can’t break your pledge.</p>
+                  <p className="vl-code">server-side key · signs refunds only</p>
                 </article>
                 <article className="vl-card vl-r" style={d('.2s')}>
                   <p className="vl-card-kicker">Option two</p>
@@ -194,7 +193,7 @@ export default function Landing() {
                   <p className="vl-vault-amt">0.05 BCH<span>locked · example</span></p>
                 </div>
                 <ol className="vl-exits">
-                  <li className="vl-r" style={d('.22s')}><b>Refund → you</b><span>Needs your signature and your verifier’s.</span></li>
+                  <li className="vl-r" style={d('.22s')}><b>Refund → you</b><span>Your verifier signs it back to your refund address.</span></li>
                   <li className="vl-r is-forfeit" style={d('.3s')}><b>Break → Chidi</b><span>Only you can sign it, from your own wallet.</span></li>
                   <li className="vl-r is-forfeit" style={d('.38s')}><b>Forfeit → Chidi</b><span>Anyone can send it once the deadline passes.</span></li>
                 </ol>

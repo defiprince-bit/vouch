@@ -6,12 +6,14 @@ A CashScript covenant on Bitcoin Cash + a Next.js app. Built for BCH BLAZE 2026 
 
 ## How it works in 30 seconds
 
-Each pledge is its own contract address (`contracts/Vouch.cash`), fixed at creation:
+Each pledge is its own contract address (`contracts/Vouch11.cash` for new single-verifier pledges), fixed at creation:
 `stakerPk, verifierPk, beneficiaryLock, deadline, pledgeId (16 random bytes), maxFee`.
+
+**Refund → you. Your verifier signs it back to your refund address.** You don't sign the refund: it can only pay your own P2PKH (derived from `stakerPk`, fixed when you lock), so the verifier can't send it anywhere else. Tell your verifier you did it; they check and sign, or don't if you didn't.
 
 | Path | Who authorises | Where the coins can go (enforced on-chain) | When |
 |---|---|---|---|
-| `keep` | staker sig **and** verifier sig | staker's P2PKH only | any time |
+| `keep` | verifier sig (v1.1; group pledges: any M verifier sigs, v2.1) | staker's P2PKH only | any time |
 | `breakByStaker` | staker sig (admits it) | beneficiary only | any time |
 | `breakByVerifier` | verifier sig | beneficiary only | any time |
 | `forfeit` | **nobody**: anyone can broadcast | beneficiary only | `tx.time >= deadline` |
@@ -25,14 +27,28 @@ Every path:
 - **Staker alone** can break (stake goes to the beneficiary) but can never take the coins back. That's the product.
 - **Verifier alone** can force a break (griefing) but can't steal: every path pays either the staker or the beneficiary. The verifier is a liveness dependency: no keep signature before the deadline means the stake forfeits.
 - **Beneficiary** has no power before the deadline. After it, anyone (beneficiary, app, stranger) can push `forfeit`, so nobody needs to stay online.
-- **Collusion:** verifier + beneficiary can lie "broken" (the UI refuses verifier = beneficiary). Staker + verifier can lie "kept"; that's inherent, so it's a bet, not a guarantee. Staker = verifier is allowed and labelled a self-honour pledge.
+- **Collusion:** verifier + beneficiary can lie "broken" (the UI refuses verifier = beneficiary). The verifier can lie "kept" (with or without the staker); that's inherent, so it's a bet, not a guarantee. A "kept" can only ever refund the staker. Staker = verifier is allowed and labelled a self-honour pledge.
 - **Replay:** verifier approval is a transaction signature (`checkSig`, default `SIGHASH_ALL | SIGHASH_UTXOS`), which commits to the exact outpoint being spent. A verifier signature for pledge A can't be reused on pledge B (there's a test for this). We use `checkSig` rather than `checkDataSig` because WizardConnect only supports transaction signing (`sign_transaction_request`); it has no raw-message signing.
 - **Keep vs forfeit race:** script can't say "before T", so keep stays valid after the deadline, and once it passes, whichever valid tx miners see first wins. The app tells the verifier to sign before deadline minus 1 hour.
-- **Demo verifier = operated by this app, honour system.** If you don't name a friend, your verifier is the *Vouch demo verifier*: a key held server-side by whoever runs this deployment (`COMMITCASH_VERIFIER_WIF`). It co-signs **keep** for whoever asks (after a confirm box and a short note, before deadline minus ~1 hour); it does not check that you did the thing. It's for trying the app. **For a real pledge, name a friend as verifier.**
+- **Demo verifier = operated by this app, honour system.** If you don't name a friend, your verifier is the *Vouch demo verifier*: a key held server-side by whoever runs this deployment (`COMMITCASH_VERIFIER_WIF`). It signs **keep** for the staker who asks (after a confirm box and a short note, before deadline minus ~1 hour; on new pledges the request must carry the staker's listSecret proof); it does not check that you did the thing. It's for trying the app. **For a real pledge, name a friend as verifier.**
 - **The demo verifier never signs a break.** `/api/verifier` can't authenticate its caller, so if it signed `breakByVerifier`, anyone holding a pledge's terms (the beneficiary included) could force a demo pledge to break. It refuses `action: "break"` (HTTP 403, covered by a test). A demo pledge ends only by keep, by expiry (`forfeit`), or by the staker's own `breakByStaker`, which the staker signs alone in their wallet.
 - **Wall listing needs the creating browser's secret, not a signature.** Anyone with a verify link has the pledge's terms and the staker's keep pre-signature, so neither can prove "I'm the staker" (and WizardConnect has no message signing to make a separate proof). Instead the pledge id commits to a nonce, the habit and `sha256(listSecret)`; the secret stays in the staker's browser storage. A link holder can't list an unlisted pledge, and can't front-run by registering their own secret first, because the contract already pins the secret's hash, so registration order doesn't matter. The committed habit can't be swapped at listing time either. Pledges made before this (random ids) can't be newly listed by anyone; the chipnet seed rows were inserted directly. Clearing site data or switching devices loses the ability to list (the pledge itself is unaffected).
 
 Full one-pager: [`trust-model.md`](trust-model.md).
+
+## Verifier-only refund (v1.1 / v2.1) and older pledges
+
+Organiser feedback: "Why would a refund need my signature? … the payback address can be pre-added like the forfeit address." It can, and now it is. New pledges use two new contracts that differ from the originals in `keep` only:
+
+| | Original (still used by every pledge locked before this) | New pledges |
+|---|---|---|
+| single verifier | [`contracts/Vouch.cash`](contracts/Vouch.cash): `keep(stakerSig, verifierSig)` | [`contracts/Vouch11.cash`](contracts/Vouch11.cash): `keep(verifierSig)` |
+| group (M of N) | [`contracts/VouchQuorum.cash`](contracts/VouchQuorum.cash): `keep(stakerSig, s0..s4)` | [`contracts/VouchQuorum21.cash`](contracts/VouchQuorum21.cash): `keep(s0..s4)` |
+
+- The refund output is still pinned to `tx.outputs[this.activeInputIndex]`, must be the staker's P2PKH (`hash160(stakerPk)`, a constructor arg), must carry `>= input - maxFee`, and (v2.1) must keep the input's token category. So the verifier(s) can only ever pay the staker, in full minus a capped fee. `breakByStaker`, `breakByVerifier` and `forfeit` are byte-for-byte the same; anyone can still forfeit after the deadline.
+- **Backward compatible.** The contract version is part of the address, so it's recorded with the pledge (`verifierRefund: true` in browser storage, verify links, wall terms and server requests). Records without it, every pledge made before this, rebuild the original contract and keep the original two-signature refund. Tests pin the original addresses, including the real chipnet lock `a0a255e4…07ea` (`test/verifier-refund.test.ts`).
+- **The staker doesn't need a wallet to get the refund.** Friend verifier: the signing link carries no staker signature; the verifier signs and broadcasts. Group: verifiers sign one after another; whoever completes M broadcasts. Demo verifier: it signs and the server broadcasts.
+- **Demo verifier on new pledges needs the staker's proof.** With no staker signature on the refund, the request must carry the pledge's `listSecret` (the one the pledge id commits to; see the wall below), which only the browser that made the pledge holds. Otherwise anyone who knows a pledge's terms could make the demo verifier end it early. The server checks it and discards it.
 
 ## Verifier quorum (M of N)
 
@@ -43,7 +59,7 @@ New pledges can name a **group** of 1–5 verifiers and how many must approve: 2
 - **Tokens:** every v2 path also requires the payout to carry the pledge input's token category (none for app-made stakes), so no spend can strip CashTokens off a pledge UTXO.
 - **No double counting:** a verifier's signature only verifies in their own slot. Duplicate keys are refused by the create form, by link decoding, by `createQuorumContract` and by the server; the contract itself doesn't re-check distinctness (10 pairwise checks would push it past 520 bytes), which only matters for a pledge someone builds outside the app, and the verify page refuses those.
 - **Replay:** each signature is a tx signature (`SIGHASH_ALL|UTXOS|FORKID`) over the one deterministic spend (that pledge's outpoint, its redeem script with the pledgeId, one fixed output, fixed fee), so it can't be used on another pledge, another lock of the same pledge, or the other path (a keep signature isn't a break vote).
-- **Signing without a backend (link relay):** the staker pre-signs the refund and gets **one link** for the whole group. Any verifier opens it, signs their slot in their wallet, and gets an updated link carrying their signature to pass to the next verifier (or back to the staker, who can paste it on the pledge page). Order doesn't matter; partial links merge slot by slot. Every signature in a link is checked against the sighash before it's shown or used, and whoever completes M of N broadcasts. All of it travels in the URL fragment.
+- **Signing without a backend (link relay):** the staker gets **one link** for the whole group (v2.1: no staker signature in it; v2 pledges: the staker pre-signs the refund first). Any verifier opens it, signs their slot in their wallet, and gets an updated link carrying their signature to pass to the next verifier (or back to the staker, who can paste it on the pledge page). Order doesn't matter; partial links merge slot by slot. Every signature in a link is checked against the sighash before it's shown or used, and whoever completes M of N broadcasts. All of it travels in the URL fragment.
 - **Griefing, not theft:** as before, verifiers can only ever send the stake to the staker (keep) or the beneficiary (break). M colluding verifiers can force a break; fewer than M can only withhold, and then the pledge forfeits at the deadline.
 
 ```bash
@@ -111,8 +127,8 @@ npm run e2e:app -- http://localhost:3311 all    # keep1 | keep2 | settle | all
 [WizardConnect](https://docs.riftenlabs.com/wizardconnect/) (`@wizardconnect/react`): **Connect Wallet** opens a QR dialog (with a copy-link option for desktop wallets). The staker key is the wallet's first `receive` pubkey. Every signature is a normal transaction signature via `sign_transaction_request` (`SIGHASH_ALL|UTXOS|FORKID`); WizardConnect has no message signing.
 
 - **Lock:** the app builds the funding tx from your wallet's UTXOs (placeholder P2PKH unlockers); your wallet signs and broadcasts.
-- **Keep, demo verifier (honour system):** you confirm + write a note → `/api/verifier` checks the pledge on-chain and returns its signature → your wallet signs the keep tx and broadcasts. Coins go back to your address. The demo verifier approves any refund you ask for; for real stakes, pick a friend.
-- **Keep, friend verifier:** your wallet pre-signs the keep tx (not broadcast) → the app makes a **verify my pledge** link (`/verify#pledge=…`, everything in the URL fragment, never sent to our server) → your friend opens it, connects their wallet, and **approves by signing the refund in their wallet**, which broadcasts it. Your friend gets their verifier key to share from `/verifier-key`.
+- **Keep, demo verifier (honour system):** you confirm + write a note → `/api/verifier` checks the pledge on-chain and your staker proof, signs the refund and broadcasts it. No wallet prompt for you. Coins go back to your address. The demo verifier approves any refund you ask for; for real stakes, pick a friend. (Pledges made before v1.1: it returns its signature and your wallet signs and broadcasts.)
+- **Keep, friend verifier:** the app makes a **verify my pledge** link (`/verify#pledge=…`, everything in the URL fragment, never sent to our server) → your friend opens it, connects their wallet, and **approves by signing the refund in their wallet**, which broadcasts it to your refund address. You don't sign. (Pledges made before v1.1: your wallet pre-signs the refund first.) Your friend gets their verifier key to share from `/verifier-key`.
 - **Break:** staker only in the app: you sign breakByStaker yourself (stake to the beneficiary). The demo verifier never breaks. (The contract still has `breakByVerifier`, so a friend verifier could sign one with their own key, but the UI doesn't offer it.)
 - **Settle:** after the deadline, `forfeit` needs no signature. The pledges page auto-broadcasts it for expired pledges it knows about (browser first, `/api/settle` as backup), and keeps a manual **Settle to beneficiary** button.
 - **Verify by:** the UI asks for approval by deadline − 6 blocks (~1 hour), and the demo verifier refuses after that, to avoid the keep/forfeit race.
@@ -151,7 +167,7 @@ See [`.env.example`](.env.example). For a deployment:
 | `DEMO_VERIFIER_MAINNET` | **server-only** | `1` lets the demo verifier sign mainnet pledges. Unset (default): it's chipnet-only, `/api/verifier` answers 403 for mainnet and the create form requires a friend or group there. |
 | `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | **server-only** | the wall registry (`libsql://vouch-wall-….turso.io` and a database token). Unset = the wall shows only the chipnet seeds and listing is off. Never `NEXT_PUBLIC_`. |
 | `WALL_IP_SALT` | **server-only** | optional salt for the hashed IPs in `list_attempts`. |
-| `COMMITCASH_VERIFIER_WIF` | **server-only** | the app-operated demo verifier key (co-signs keep only). Never `NEXT_PUBLIC_`. Unset = demo verifier off. *Legacy name from before the rename to Vouch; kept as is because it's already set on Vercel.* |
+| `COMMITCASH_VERIFIER_WIF` | **server-only** | the app-operated demo verifier key (signs keep only). Never `NEXT_PUBLIC_`. Unset = demo verifier off. *Legacy name from before the rename to Vouch; kept as is because it's already set on Vercel.* |
 
 ## Known limits
 

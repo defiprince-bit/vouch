@@ -17,7 +17,7 @@ export const LIST_ELSEWHERE_COPY =
 
 /** Terms only: what the server needs to rebuild the contract. */
 export function wallTerms(p: StoredPledge) {
-  const base = { id: p.id, deadline: p.deadline, beneficiaryAddress: p.beneficiaryAddress, stakerPubkey: p.stakerPubkey, network: p.network, contractAddress: p.contractAddress };
+  const base = { id: p.id, deadline: p.deadline, beneficiaryAddress: p.beneficiaryAddress, stakerPubkey: p.stakerPubkey, network: p.network, contractAddress: p.contractAddress, ...(p.verifierRefund ? { verifierRefund: true as const } : {}) };
   return p.version === 2
     ? { ...base, version: 2 as const, verifierPubkeys: p.verifiers!.map((v) => v.pubkey), threshold: p.threshold! }
     : { ...base, verifierPubkey: p.verifierPubkey };

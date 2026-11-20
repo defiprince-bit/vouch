@@ -21,7 +21,7 @@ import { gatherWalletUtxos, lockInputPaths, totalSats } from './walletUtxos';
 import type { VerifyRequest } from './share';
 import { isQuorumPledge } from './pledges';
 import { quorumContract } from './quorumShare';
-import { quorumTerms, quorumBreakByStaker, quorumForfeit } from './quorumActions';
+import { quorumTerms, quorumBreakByStaker, quorumForfeit, stakerProofOf } from './quorumActions';
 
 /** Either contract version, for reads (address, UTXOs). Spends go through the version's own builders. */
 export function anyPledgeContract(p: StoredPledge, provider?: NetworkProvider) {
@@ -30,7 +30,10 @@ export function anyPledgeContract(p: StoredPledge, provider?: NetworkProvider) {
   return { provider: prov, contract: quorumContract(quorumTerms(p), prov) };
 }
 
-export function pledgeContract(p: Pick<StoredPledge, 'stakerPubkey' | 'verifierPubkey' | 'beneficiaryAddress' | 'deadline' | 'id' | 'network'>, provider?: NetworkProvider) {
+export function pledgeContract(
+  p: Pick<StoredPledge, 'stakerPubkey' | 'verifierPubkey' | 'beneficiaryAddress' | 'deadline' | 'id' | 'network' | 'verifierRefund'>,
+  provider?: NetworkProvider,
+) {
   const prov = provider ?? getProvider(p.network);
   const contract = createPledgeContract(
     {
@@ -39,6 +42,7 @@ export function pledgeContract(p: Pick<StoredPledge, 'stakerPubkey' | 'verifierP
       beneficiaryAddress: p.beneficiaryAddress,
       deadline: p.deadline,
       pledgeId: p.id,
+      verifierRefund: p.verifierRefund === true,
     },
     prov,
   );
@@ -52,6 +56,7 @@ export const pledgeTerms = (p: StoredPledge) => ({
   stakerPubkey: p.stakerPubkey,
   verifierPubkey: p.verifierPubkey,
   network: p.network,
+  ...(p.verifierRefund ? { verifierRefund: true as const } : {}),
   ...(isQuorumPledge(p) ? { version: 2 as const, verifierPubkeys: p.verifiers!.map((v) => v.pubkey), threshold: p.threshold } : {}),
 });
 
@@ -103,15 +108,28 @@ export async function walletBalance(manager: DappConnectionManager, network: Sto
   return totalSats(await gatherWalletUtxos(manager, getProvider(network), network));
 }
 
-/** Demo verifier flow (verifier first): get the verifier's signature, then the staker signs the refund and it's pushed. */
-export async function keepWithDemoVerifier(manager: DappConnectionManager, p: StoredPledge, note: string) {
+/**
+ * Demo verifier flow.
+ * v1.1: the verifier signs the refund alone and the server broadcasts it; no wallet needed. The
+ *       request carries this browser's staker proof (listSecret), so only the staker can ask.
+ * v1:   verifier first: get the verifier's signature, then the staker signs the refund and it's pushed.
+ */
+export async function keepWithDemoVerifier(manager: DappConnectionManager | null, p: StoredPledge, note: string): Promise<{ txid: string; txHex?: string }> {
+  const proof = p.verifierRefund ? stakerProofOf(p) : null;
+  if (p.verifierRefund && !proof) throw new Error('Ask the demo verifier from the browser you made this pledge in');
   const res = await fetch('/api/verifier', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ action: 'keep', pledge: pledgeTerms(p), confirm: true, note }),
+    body: JSON.stringify({ action: 'keep', pledge: pledgeTerms(p), confirm: true, note, ...(proof ?? {}) }),
   });
-  const json = (await res.json()) as { verifierSig?: string; utxo?: { txid: string; vout: number; satoshis: string }; error?: string };
-  if (!res.ok || !json.verifierSig || !json.utxo) throw new Error(json.error ?? 'Verifier refused');
+  const json = (await res.json()) as { txid?: string; verifierSig?: string; utxo?: { txid: string; vout: number; satoshis: string }; error?: string };
+  if (!res.ok) throw new Error(json.error ?? 'Verifier refused');
+  if (p.verifierRefund) {
+    if (!json.txid) throw new Error(json.error ?? 'Verifier refused');
+    return { txid: json.txid };
+  }
+  if (!manager) throw new Error('Connect your wallet to sign your refund');
+  if (!json.verifierSig || !json.utxo) throw new Error(json.error ?? 'Verifier refused');
   const { provider, contract } = pledgeContract(p);
   const utxo = { ...json.utxo, satoshis: BigInt(json.utxo.satoshis), lockingBytecode: contract.lockingBytecode };
   const builder = buildKeep({
@@ -125,23 +143,32 @@ export async function keepWithDemoVerifier(manager: DappConnectionManager, p: St
   return walletSign(manager, provider, builder, [stakerPath], { broadcast: true, userPrompt: 'Vouch: verifier approved. Sign to get your stake back.' });
 }
 
-/** Friend flow (staker first): pre-sign the refund, return a verify request to share. Nothing is broadcast. */
-export async function prepareVerifyRequest(manager: DappConnectionManager, p: StoredPledge): Promise<VerifyRequest> {
+/**
+ * Friend flow: return a verify request to share. Nothing is broadcast.
+ * v1:   the staker pre-signs the refund first (wallet prompt).
+ * v1.1: no wallet signature (`manager` may be null): the verifier signs the refund alone.
+ */
+export async function prepareVerifyRequest(manager: DappConnectionManager | null, p: StoredPledge): Promise<VerifyRequest> {
   const { provider, contract } = pledgeContract(p);
   const utxo = await lockedUtxo(contract);
-  const builder = buildKeep({
-    contract,
-    provider,
-    utxo,
-    stakerSig: placeholderSignature(),
-    verifierSig: DUMMY_SIGNATURE,
-    stakerAddress: stakerP2pkhAddress(hexToBin(p.stakerPubkey), p.network),
-  });
-  const { txHex } = await walletSign(manager, provider, builder, [stakerPath], {
-    broadcast: false,
-    userPrompt: 'Vouch: pre-sign your refund. Nothing is sent until your verifier approves.',
-  });
-  const { stakerSig } = keepSignaturesFromTx(txHex);
+  let stakerSig: Uint8Array | undefined;
+  if (!p.verifierRefund) {
+    if (!manager) throw new Error('Connect your wallet to pre-sign your refund');
+    const builder = buildKeep({
+      contract,
+      provider,
+      utxo,
+      stakerSig: placeholderSignature(),
+      verifierSig: DUMMY_SIGNATURE,
+      stakerAddress: stakerP2pkhAddress(hexToBin(p.stakerPubkey), p.network),
+    });
+    const { txHex } = await walletSign(manager, provider, builder, [stakerPath], {
+      broadcast: false,
+      userPrompt: 'Vouch: pre-sign your refund. Nothing is sent until your verifier approves.',
+    });
+    stakerSig = keepSignaturesFromTx(txHex).stakerSig;
+    if (!stakerSig) throw new Error('The wallet didn’t sign the refund. Try again.');
+  }
   return {
     v: 1,
     pledge: {
@@ -154,12 +181,13 @@ export async function prepareVerifyRequest(manager: DappConnectionManager, p: St
       verifierPubkey: p.verifierPubkey,
       contractAddress: p.contractAddress,
       network: p.network,
+      ...(p.verifierRefund ? { verifierRefund: true as const } : {}),
       ...(p.beneficiaryName ? { beneficiaryName: p.beneficiaryName } : {}),
       ...(p.deadlineAt ? { deadlineAt: p.deadlineAt } : {}),
     },
     utxo: { txid: utxo.txid, vout: utxo.vout, satoshis: utxo.satoshis.toString() },
     fee: DEFAULT_FEE.toString(),
-    stakerSig: binToHex(stakerSig),
+    stakerSig: stakerSig ? binToHex(stakerSig) : '',
   };
 }
 
@@ -173,14 +201,14 @@ export function findWalletIndex(manager: DappConnectionManager, pubkeyHex: strin
   return null;
 }
 
-/** Verifier (friend) approves: signs the refund in their wallet; it's pushed right away. */
+/** Verifier (friend) approves: signs the refund in their wallet; it's pushed right away (v1.1: their signature is all it needs). */
 export async function approveKeepAsVerifier(manager: DappConnectionManager, r: VerifyRequest, walletIndex: number) {
   const { provider, contract } = pledgeContract(r.pledge);
   const builder = buildKeep({
     contract,
     provider,
     utxo: { ...r.utxo, satoshis: BigInt(r.utxo.satoshis), lockingBytecode: contract.lockingBytecode },
-    stakerSig: hexToBin(r.stakerSig),
+    stakerSig: r.pledge.verifierRefund ? undefined : hexToBin(r.stakerSig),
     verifierSig: placeholderSignature(),
     stakerAddress: stakerP2pkhAddress(hexToBin(r.pledge.stakerPubkey), r.pledge.network),
   });

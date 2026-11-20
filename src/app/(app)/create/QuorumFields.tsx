@@ -53,7 +53,7 @@ export function QuorumFields(props: {
         const k = r.key.trim().toLowerCase();
         const err =
           rowKeyError(r.key) ??
-          (k && staker === k ? 'That’s your own key. You can’t vouch for yourself: each verifier counts once, and you already sign as the staker.' : null) ??
+          (k && staker === k ? 'That’s your own key. You can’t vouch for yourself: your verifiers have to be other people.' : null) ??
           (dupes.has(k) ? 'This key is already in the list: each verifier counts once.' : null);
         return (
           <div className="field-row" key={i}>

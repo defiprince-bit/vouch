@@ -4,7 +4,7 @@
 // unspendable "nothing up my sleeve" keys. Signatures are collected slot by slot, at different
 // times and in any order; every signer signs the SAME deterministic transaction (same UTXO, same
 // single output, same fee, same version/locktime), so their signatures combine freely.
-import { Contract, TransactionBuilder, placeholderSignature, type NetworkProvider, type SpendableUtxo } from 'cashscript';
+import { Contract, TransactionBuilder, placeholderSignature, type NetworkProvider, type SpendableUtxo, type Unlocker } from 'cashscript';
 import {
   binToHex,
   hexToBin,
@@ -17,7 +17,8 @@ import {
   secp256k1,
 } from '@bitauth/libauth';
 import quorumArtifact from './VouchQuorum.artifact';
-import { addressToLockingBytecode, DEFAULT_MAX_FEE, DUST, type Signer } from './vouch';
+import quorum21Artifact from './VouchQuorum21.artifact';
+import { addressToLockingBytecode, keepNeedsStaker, DEFAULT_MAX_FEE, DUST, type Signer } from './vouch';
 import { unlockingPushes } from './wc';
 import { checkAddress } from './network';
 
@@ -59,6 +60,11 @@ export interface QuorumParams {
   deadline: number;
   pledgeId: string;
   maxFee?: bigint;
+  /**
+   * true = v2.1 (contracts/VouchQuorum21.cash): M verifiers alone sign the refund. Missing/false =
+   * v2 (contracts/VouchQuorum.cash): the refund also needs the staker's signature.
+   */
+  verifierRefund?: boolean;
 }
 
 /** Message used everywhere a verifier key repeats one already in the pledge (another verifier or the staker). */
@@ -124,7 +130,7 @@ export function createQuorumContract(params: QuorumParams, provider: NetworkProv
   if (pledgeId.length !== 16) throw new Error('pledgeId must be 16 bytes');
   const [v0, v1, v2, v3, v4] = slotKeys(params.verifierPubkeys);
   return new Contract(
-    quorumArtifact,
+    params.verifierRefund ? quorum21Artifact : quorumArtifact,
     [
       params.stakerPubkey,
       v0,
@@ -166,10 +172,18 @@ interface QuorumSpend {
   fee?: bigint;
 }
 
-/** keep: staker + any M verifiers; pays the staker's P2PKH. */
-export function buildQuorumKeep(o: QuorumSpend & { stakerSig: Signer; verifierSigs: SlotSigners; stakerAddress: string }) {
+/** keep: pays the staker's P2PKH. v2: staker + any M verifiers. v2.1: any M verifiers (`stakerSig` ignored). */
+export function buildQuorumKeep(o: QuorumSpend & { stakerSig?: Signer; verifierSigs: SlotSigners; stakerAddress: string }) {
+  let unlocker;
+  if (keepNeedsStaker(o.contract)) {
+    if (!o.stakerSig) throw new Error('This pledge’s refund needs the staker’s signature');
+    unlocker = o.contract.unlock.keep(o.stakerSig, ...slotArgs(o.verifierSigs));
+  } else {
+    // v2.1 artifact: keep(s0..s4). The contract is typed from the v2 artifact, hence the cast.
+    unlocker = (o.contract.unlock.keep as unknown as (...sigs: Signer[]) => Unlocker)(...slotArgs(o.verifierSigs));
+  }
   return new TransactionBuilder({ provider: o.provider })
-    .addInput(o.utxo, o.contract.unlock.keep(o.stakerSig, ...slotArgs(o.verifierSigs)))
+    .addInput(o.utxo, unlocker)
     .addOutput({ to: o.stakerAddress, amount: payout(o.utxo, o.fee ?? QUORUM_FEE) });
 }
 
@@ -195,13 +209,15 @@ export function buildQuorumForfeit(o: QuorumSpend & { beneficiaryAddress: string
 
 /*
  * Unlocking bytecode layout (CashScript pushes args in reverse, then selector, then redeem script):
- *   keep(stakerSig, s0..s4)    -> [s4, s3, s2, s1, s0, stakerSig, selector, redeemScript]
- *   breakByVerifier(s0..s4)    -> [s4, s3, s2, s1, s0, selector, redeemScript]
+ *   v2   keep(stakerSig, s0..s4) -> [s4, s3, s2, s1, s0, stakerSig, selector, redeemScript]
+ *   v2.1 keep(s0..s4)            -> [s4, s3, s2, s1, s0, selector, redeemScript]
+ *   breakByVerifier(s0..s4)      -> [s4, s3, s2, s1, s0, selector, redeemScript]
+ * keep's selector is OP_0 (an empty push), so a 65-byte push after the slots is v2's staker signature.
  */
 export function quorumSigsFromTx(txHex: string, kind: 'keep' | 'break', inputIndex = 0) {
   const pushes = unlockingPushes(txHex, inputIndex);
   const slots = pushes.slice(0, MAX_VERIFIERS).reverse();
-  const stakerSig = kind === 'keep' ? pushes[MAX_VERIFIERS] : undefined;
+  const stakerSig = kind === 'keep' && pushes[MAX_VERIFIERS]?.length === 65 ? pushes[MAX_VERIFIERS] : undefined;
   return { slots, stakerSig };
 }
 

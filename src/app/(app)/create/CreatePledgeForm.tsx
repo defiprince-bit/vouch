@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { hexToBin } from '@bitauth/libauth';
-import { createPledgeContract, getProvider, validatePledge, verifyByHeight, MIN_STAKE, DEFAULT_MAX_FEE } from '@/lib/vouch';
+import { createPledgeContract, getProvider, validatePledge, verifyByHeight, stakerP2pkhAddress, MIN_STAKE, DEFAULT_MAX_FEE } from '@/lib/vouch';
 import { savePledge, type StoredPledge } from '@/lib/pledges';
 import { checkAddress, explorerAddr } from '@/lib/network';
 import { useNetwork } from '@/lib/useNetwork';
@@ -152,6 +152,8 @@ export function CreatePledgeForm() {
           beneficiaryAddress,
           deadline,
           pledgeId,
+          // v2.1: the verifiers alone sign the refund back to you (contracts/VouchQuorum21.cash).
+          verifierRefund: true,
         };
         const qIssues = quorumPledgeIssues(qParams).map((i) => (i === 'Verifier must not be the beneficiary' ? SAME_ADDR : i));
         if (qIssues.length) return setErrors(qIssues);
@@ -168,6 +170,7 @@ export function CreatePledgeForm() {
           verifierPubkey: groupKeys[0].pubkey,
           verifierKind: 'friend',
           version: 2,
+          verifierRefund: true,
           verifiers: groupKeys,
           threshold: groupM,
           contractAddress: contract.address,
@@ -186,6 +189,8 @@ export function CreatePledgeForm() {
         beneficiaryAddress,
         deadline,
         pledgeId,
+        // v1.1: the verifier alone signs the refund back to you (contracts/Vouch11.cash).
+        verifierRefund: true,
       };
       const issues = validatePledge(params, sats!, network).map((i) => (i === 'Verifier must not be the beneficiary' ? SAME_ADDR : i));
       const hard = issues.filter((i) => !i.startsWith('Verifier is the staker'));
@@ -201,6 +206,7 @@ export function CreatePledgeForm() {
         beneficiaryName: beneName.trim() || undefined,
         stakerPubkey: stakerHex,
         verifierPubkey: verifierHex,
+        verifierRefund: true,
         verifierKind: verifierMode,
         verifierName: verifierMode === 'friend' ? friendName.trim() || undefined : undefined,
         contractAddress: contract.address,
@@ -288,7 +294,7 @@ export function CreatePledgeForm() {
       verifierNote={verifierMode === 'demo' ? 'Demo verifier is run by Vouch.' : undefined}
       beneficiary={beneLabel}
       beneficiaryAddr={beneficiary.trim() || undefined}
-      keepCopy="Coins return to you after you sign and the verifier signs the refund in their wallet."
+      keepCopy="Your verifier signs it back to your refund address. You don’t need to sign."
       breakCopy="Paid to the beneficiary. Same if time runs out."
     />
   );
@@ -448,7 +454,7 @@ export function CreatePledgeForm() {
                 <div className="outcome-panel keep">
                   <h3>If you keep it</h3>
                   <p className="amount-lg">{formatBch(draft.stakeSats)}</p>
-                  <p>Returns to your wallet after you sign, and <strong>{verifierLabel}</strong> signs the refund transaction. The contract will not refund on your signature alone.</p>
+                  <p>Returns to your wallet when <strong>{verifierLabel}</strong> signs the refund. You don’t sign it: the contract only lets the refund pay your own address, <span className="addr">{stakerP2pkhAddress(hexToBin(draft.stakerPubkey), draft.network)}</span>, so the verifier can’t send it anywhere else. Your signature alone can’t refund it.</p>
                 </div>
                 <div className="outcome-panel break">
                   <h3>Break or expiry</h3>
@@ -500,10 +506,10 @@ export function CreatePledgeForm() {
               )}
               <p className="lede" style={{ margin: '16px 0' }}>
                 {draft.version === 2
-                  ? `When you’ve kept it, open the pledge and tap Keep: it makes one signing link for your verifiers. Any ${draft.threshold} of the ${draft.verifiers!.length} sign, one after another. The same ${draft.threshold} could instead vote it broken and pay the beneficiary.`
+                  ? `When you’ve kept it, open the pledge and tap Keep: it makes one signing link for your verifiers. Any ${draft.threshold} of the ${draft.verifiers!.length} sign, one after another, and the coins come back to you. You don’t sign. The same ${draft.threshold} could instead vote it broken and pay the beneficiary.`
                   : draft.verifierKind === 'friend'
-                  ? `When you’ve kept it, open the pledge and tap Keep: it makes a signing link for ${verifierLabel}. They sign the refund in their wallet.`
-                  : 'When you’ve kept it, open the pledge and tap Keep before the verify-by time. The demo verifier signs the refund.'}
+                  ? `When you’ve kept it, open the pledge and tap Keep: it makes a signing link for ${verifierLabel}. They sign the refund in their wallet and the coins come back to you. You don’t sign.`
+                  : 'When you’ve kept it, open the pledge and tap Keep before the verify-by time. The demo verifier signs the refund back to you. You don’t sign.'}
               </p>
               {lockTxid && (
                 <div className="wall-list-row" data-testid="wall-list-row">

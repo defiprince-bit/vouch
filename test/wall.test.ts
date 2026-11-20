@@ -96,7 +96,7 @@ function verifyLinkFor(p: ReturnType<typeof v1Pledge>) {
     pledge: { id: s.id, promise: s.promise, stakeSats: s.stakeSats, deadline: s.deadline, beneficiaryAddress: s.beneficiaryAddress, stakerPubkey: s.stakerPubkey, verifierPubkey: s.verifierPubkey, contractAddress: s.contractAddress, network: s.network },
     utxo: { txid: p.utxo.txid, vout: p.utxo.vout, satoshis: p.utxo.satoshis.toString() },
     fee: DEFAULT_FEE.toString(),
-    stakerSig: binToHex(stakerSig),
+    stakerSig: binToHex(stakerSig!),
   };
   return { r, url: verifyLink('https://vouch.example', r) };
 }
@@ -153,6 +153,29 @@ describe('listing (POST /api/wall)', () => {
     expect(JSON.stringify(store.rows[0])).not.toContain(p.listSecret);
     expect(store.rows[0].termsJson).not.toMatch(/stakerSig|promise|beneficiaryName|listSecret|listNonce/);
     expect((await err(list(p.body))).status).toBe(409);
+  });
+
+  it('v1.1 (verifier-only refund): lists with its flag, stores it, and derives kept from a verifier-only keep', async () => {
+    const habit = 'Run 3 times before the clock hits zero';
+    const { listSecret, listNonce, id } = commitment(habit);
+    const contract = createPledgeContract(
+      { stakerPubkey: staker.pub, verifierPubkey: verifier.pub, beneficiaryAddress: beneficiary.address, deadline: DEADLINE, pledgeId: id, verifierRefund: true },
+      provider,
+    );
+    const utxo = provider.addUtxo(contract.address, randomUtxo({ satoshis: STAKE }));
+    const stored: StoredPledge = {
+      id, promise: habit, stakeSats: STAKE.toString(), deadline: DEADLINE, beneficiaryAddress: beneficiary.address, stakerPubkey: staker.hex,
+      verifierPubkey: verifier.hex, verifierRefund: true, verifierKind: 'friend', contractAddress: contract.address, network: 'chipnet', createdAt: 1, listSecret, listNonce,
+    };
+    const body = { pledge: wallTerms(stored), listSecret, listNonce, habit };
+    // without the flag the terms rebuild the v1 address, which doesn't match
+    expect((await err(list(withTerms(body, { verifierRefund: undefined })))).message).toMatch(/don’t match/);
+    await list(body);
+    expect(JSON.parse(store.rows[0].termsJson).verifierRefund).toBe(true);
+    const stakerAddress = stakerP2pkhAddress(staker.pub, 'chipnet');
+    const hex = buildKeep({ contract, provider, utxo, verifierSig: new SignatureTemplate(verifier.priv), stakerAddress }).build();
+    const st = await deriveState(JSON.parse(store.rows[0].termsJson), { ...chain, utxos: async () => [], history: async () => [{ hash: 'aa'.repeat(32), blockHeight: 1, timestamp: 1, inputs: [{ address: contract.address, value: Number(STAKE) }], outputs: [{ address: stakerAddress, value: Number(STAKE - DEFAULT_FEE) }] }] as never, rawTx: async () => hex }, provider);
+    expect(st).toMatchObject({ state: 'kept', sealsCollected: 1 });
   });
 
   it('a correct secret is accepted (v2 quorum)', async () => {

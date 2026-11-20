@@ -79,11 +79,14 @@ export function unlockingPushes(txHex: string, inputIndex = 0): Uint8Array[] {
 
 /*
  * CashScript pushes function arguments in reverse order, then the function selector, then the
- * redeem script. For keep(stakerSig, verifierSig) the unlocking bytecode is:
- *   [verifierSig, stakerSig, selector, redeemScript]
+ * redeem script. keep is function 0, so its selector is OP_0 (an empty push).
+ *   v1   keep(stakerSig, verifierSig) -> [verifierSig, stakerSig, selector, redeemScript]
+ *   v1.1 keep(verifierSig)            -> [verifierSig, selector, redeemScript]
+ * `stakerSig` is undefined for a v1.1 keep.
  */
-export function keepSignaturesFromTx(txHex: string, inputIndex = 0) {
-  const [verifierSig, stakerSig] = unlockingPushes(txHex, inputIndex);
-  if (verifierSig?.length !== 65 || stakerSig?.length !== 65) throw new Error('Not a keep spend');
-  return { stakerSig, verifierSig };
+export function keepSignaturesFromTx(txHex: string, inputIndex = 0): { stakerSig?: Uint8Array; verifierSig: Uint8Array } {
+  const [verifierSig, second] = unlockingPushes(txHex, inputIndex);
+  if (verifierSig?.length !== 65) throw new Error('Not a keep spend');
+  if (second?.length === 65) return { stakerSig: second, verifierSig };
+  return { verifierSig };
 }

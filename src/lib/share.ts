@@ -11,10 +11,11 @@ export interface VerifyRequest {
     StoredPledge,
     'id' | 'promise' | 'stakeSats' | 'deadline' | 'beneficiaryAddress' | 'stakerPubkey' | 'verifierPubkey' | 'contractAddress' | 'network'
   > &
-    Partial<Pick<StoredPledge, 'beneficiaryName' | 'deadlineAt'>>; // display only; never used to build transactions
+    Partial<Pick<StoredPledge, 'beneficiaryName' | 'deadlineAt'>> & // display only; never used to build transactions
+    Partial<Pick<StoredPledge, 'verifierRefund'>>; // v1.1: picks the contract (part of its address)
   utxo: { txid: string; vout: number; satoshis: string };
   fee: string;
-  /** Staker's signature over the deterministic keep tx (hex). */
+  /** v1: the staker's signature over the deterministic keep tx (hex). v1.1: '' (the verifier signs alone). */
   stakerSig: string;
 }
 
@@ -39,7 +40,10 @@ export function decodeVerifyRequest(fragment: string): VerifyRequest {
   } catch {
     throw new Error('Invalid verify link: ask your friend to copy the whole link again');
   }
-  if (!r || r.v !== 1 || !r.pledge || !r.utxo || !/^[0-9a-f]{130}$/i.test(r.stakerSig)) throw new Error('Invalid verify link');
+  if (!r || r.v !== 1 || !r.pledge || !r.utxo) throw new Error('Invalid verify link');
+  if (r.pledge.verifierRefund !== undefined && r.pledge.verifierRefund !== true) throw new Error('Invalid verify link');
+  if (r.pledge.verifierRefund) r.stakerSig = '';
+  else if (!/^[0-9a-f]{130}$/i.test(r.stakerSig ?? '')) throw new Error('Invalid verify link');
   if (!/^[0-9a-f]{64}$/i.test(r.utxo.txid)) throw new Error('Invalid verify link');
   checkLinkNetwork(r.pledge);
   return r;

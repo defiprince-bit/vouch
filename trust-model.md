@@ -49,3 +49,20 @@ Same four paths; the verifier becomes a group of N = 1..5 keys with a threshold 
 - **Replay:** signatures commit to the pledge outpoint and its redeem script (which contains the pledgeId), so they don't carry over to another pledge, another lock, or the other spend path.
 - **Duplicates:** refused off-chain (create form, link decoder, contract constructor helper, server); not re-checked on-chain, to keep the script under 520 bytes.
 - **Old pledges:** stored pledges and links without `version: 2` load the v1 `Vouch` artifact exactly as before; its bytecode and a known chipnet address are pinned by tests.
+
+## v1.1 / v2.1: verifier-only refund (contracts/Vouch11.cash, contracts/VouchQuorum21.cash)
+
+New pledges drop the staker's signature from `keep`. Everything else is unchanged.
+
+| Path | v1 / v2 (pledges locked before this) | v1.1 / v2.1 (new pledges) |
+|---|---|---|
+| keep | staker sig + verifier sig (v2: + any M) | verifier sig (v2.1: any M of N) |
+| breakByStaker, breakByVerifier, forfeit | as above | identical |
+
+Why it's safe:
+- **The refund destination is fixed at lock time.** `keep` requires `tx.outputs[activeInputIndex].lockingBytecode == P2PKH(hash160(stakerPk))`; `stakerPk` is a constructor arg, so it's baked into the address before anything is locked. The verifier(s) can sign the refund, but it can only pay the staker. Same fee bound (`>= input - maxFee`) and, for v2.1, the same token-category guard.
+- **No new theft path.** Every path still pays either the staker (keep) or the beneficiary (break, forfeit). The only new power is "the verifier(s) can refund the staker without the staker's consent", which costs the staker nothing.
+- **Replay:** unchanged. A verifier signature is `SIGHASH_ALL | SIGHASH_UTXOS` over one outpoint and one output, so it can't move to another pledge or become a break (different output).
+- **Keep vs forfeit race:** unchanged; keep has no deadline guard (as in v1), the app and the demo verifier stop approving at deadline minus ~1 hour.
+- **Demo verifier griefing:** with no staker signature, a demo-verifier refund would otherwise be triggerable by anyone who knows the terms (the wall shows them), ending someone's pledge early (a "kept" they didn't earn). So for v1.1 / v2.1 the demo verifier requires the staker's listSecret proof (the pledge id commits to `sha256(listSecret)`), which only the creating browser holds. A friend verifier needs no such proof: their own judgement is the check.
+- **Backward compatibility:** the version is part of the contract address, so it's stored with the pledge as `verifierRefund: true`. A pledge without it rebuilds the original artifact and keeps the original two-signature refund; `test/verifier-refund.test.ts` pins the original addresses, including the real chipnet lock a0a255e4…07ea.

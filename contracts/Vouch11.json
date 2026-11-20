@@ -1,0 +1,65 @@
+{
+  "contractName": "Vouch11",
+  "constructorInputs": [
+    { "name": "stakerPk", "type": "pubkey" },
+    { "name": "verifierPk", "type": "pubkey" },
+    { "name": "beneficiaryLock", "type": "bytes" },
+    { "name": "deadline", "type": "int" },
+    { "name": "pledgeId", "type": "bytes16" },
+    { "name": "maxFee", "type": "int" }
+  ],
+  "abi": [
+    {
+      "name": "keep",
+      "inputs": [
+        { "name": "verifierSig", "type": "sig" }
+      ]
+    },
+    {
+      "name": "breakByStaker",
+      "inputs": [
+        { "name": "stakerSig", "type": "sig" }
+      ]
+    },
+    {
+      "name": "breakByVerifier",
+      "inputs": [
+        { "name": "verifierSig", "type": "sig" }
+      ]
+    },
+    { "name": "forfeit", "inputs": [] }
+  ],
+  "bytecode": "OP_6 OP_PICK OP_0 OP_NUMEQUAL OP_IF OP_7 OP_ROLL OP_ROT OP_CHECKSIGVERIFY OP_INPUTINDEX OP_DUP OP_OUTPUTBYTECODE 76a914 OP_3 OP_ROLL OP_HASH160 OP_CAT 88ac OP_CAT OP_EQUALVERIFY OP_DUP OP_OUTPUTVALUE OP_SWAP OP_UTXOVALUE OP_5 OP_ROLL OP_SUB OP_GREATERTHANOREQUAL OP_VERIFY OP_2DROP OP_2DROP OP_1 OP_ELSE OP_6 OP_PICK OP_1 OP_NUMEQUAL OP_IF OP_7 OP_ROLL OP_SWAP OP_CHECKSIGVERIFY OP_INPUTINDEX OP_DUP OP_OUTPUTBYTECODE OP_3 OP_ROLL OP_EQUALVERIFY OP_DUP OP_OUTPUTVALUE OP_SWAP OP_UTXOVALUE OP_5 OP_ROLL OP_SUB OP_GREATERTHANOREQUAL OP_VERIFY OP_2DROP OP_2DROP OP_1 OP_ELSE OP_6 OP_PICK OP_2 OP_NUMEQUAL OP_IF OP_7 OP_ROLL OP_ROT OP_CHECKSIGVERIFY OP_INPUTINDEX OP_DUP OP_OUTPUTBYTECODE OP_3 OP_ROLL OP_EQUALVERIFY OP_DUP OP_OUTPUTVALUE OP_SWAP OP_UTXOVALUE OP_5 OP_ROLL OP_SUB OP_GREATERTHANOREQUAL OP_VERIFY OP_2DROP OP_2DROP OP_1 OP_ELSE OP_6 OP_ROLL OP_3 OP_NUMEQUALVERIFY OP_3 OP_ROLL OP_CHECKLOCKTIMEVERIFY OP_DROP OP_INPUTINDEX OP_DUP OP_OUTPUTBYTECODE OP_4 OP_ROLL OP_EQUALVERIFY OP_DUP OP_OUTPUTVALUE OP_SWAP OP_UTXOVALUE OP_5 OP_ROLL OP_SUB OP_GREATERTHANOREQUAL OP_VERIFY OP_ROT OP_SIZE OP_NIP OP_16 OP_NUMEQUAL OP_NIP OP_NIP OP_ENDIF OP_ENDIF OP_ENDIF",
+  "source": "pragma cashscript ^0.14.0;\n\n// Vouch v1.1 pledge covenant (trust model: ../trust-model.md, \"v1.1 / v2.1: verifier-only refund\").\n// Same as contracts/Vouch.cash except `keep`: the verifier alone signs the refund. The staker\n// doesn't sign: the refund destination is fixed at lock time (the staker's P2PKH, derived from\n// the stakerPk constructor arg), so the verifier can only ever send the coins back to the staker.\n// Pledges locked under contracts/Vouch.cash keep using that artifact (their address commits to it).\n//\n//   keep            verifier sig                 -> stake returns to the staker's P2PKH\n//   breakByStaker   staker sig (admits it)       -> stake goes to the beneficiary\n//   breakByVerifier verifier sig                 -> stake goes to the beneficiary\n//   forfeit         no signature, after deadline -> stake goes to the beneficiary\n//\n// Every path pins its payout to tx.outputs[this.activeInputIndex] and caps the fee at maxFee,\n// exactly like v1. A verifier signature uses SIGHASH_ALL | SIGHASH_UTXOS, so it commits to the\n// outpoint and to the outputs: a keep signature can't be replayed against another pledge or\n// turned into a break (whose output pays a different locking bytecode).\ncontract Vouch11(\n    pubkey stakerPk,\n    pubkey verifierPk,\n    bytes beneficiaryLock,\n    int deadline, // nLocktime: block height if < 500000000, else MTP unix seconds\n    bytes16 pledgeId,\n    int maxFee\n) {\n    function keep(sig verifierSig) {\n        require(checkSig(verifierSig, verifierPk));\n        int i = this.activeInputIndex;\n        require(tx.outputs[i].lockingBytecode == new LockingBytecodeP2PKH(hash160(stakerPk)));\n        require(tx.outputs[i].value >= tx.inputs[i].value - maxFee);\n    }\n\n    function breakByStaker(sig stakerSig) {\n        require(checkSig(stakerSig, stakerPk));\n        int i = this.activeInputIndex;\n        require(tx.outputs[i].lockingBytecode == beneficiaryLock);\n        require(tx.outputs[i].value >= tx.inputs[i].value - maxFee);\n    }\n\n    function breakByVerifier(sig verifierSig) {\n        require(checkSig(verifierSig, verifierPk));\n        int i = this.activeInputIndex;\n        require(tx.outputs[i].lockingBytecode == beneficiaryLock);\n        require(tx.outputs[i].value >= tx.inputs[i].value - maxFee);\n    }\n\n    function forfeit() {\n        require(tx.time >= deadline);\n        int i = this.activeInputIndex;\n        require(tx.outputs[i].lockingBytecode == beneficiaryLock);\n        require(tx.outputs[i].value >= tx.inputs[i].value - maxFee);\n        // pledgeId only needs to be part of the address; touch it so it's not an unused param.\n        require(pledgeId.length == 16);\n    }\n}\n",
+  "fingerprint": "0b26fd6fb35ac4c87ae3aa89e9dc9db61828e17064704def25821e9f30348187",
+  "debug": {
+    "bytecode": "5679009c63577a7badc076cd0376a914537aa97e0288ac7e8876cc7cc6557a94a2696d6d51675679519c63577a7cadc076cd537a8876cc7cc6557a94a2696d6d51675679529c63577a7badc076cd537a8876cc7cc6557a94a2696d6d5167567a539d537ab175c076cd547a8876cc7cc6557a94a2697b8277609c7777686868",
+    "sourceMap": "26:4:31:5;;;;;27:25:27:36;;:38::48;:8::51:1;28:16:28:37:0;29:27:29:28;:16::45:1;:49::92:0;:82::90;;:74::91:1;:49::92;;;:8::94;30:27:30:28:0;:16::35:1;:49::50:0;:39::57:1;:60::66:0;;:39:::1;:16;:8::68;26:35:31:5;;;:4;33::38::0;;;;;34:25:34:34;;:36::44;:8::47:1;35:16:35:37:0;36:27:36:28;:16::45:1;:49::64:0;;:8::66:1;37:27:37:28:0;:16::35:1;:49::50:0;:39::57:1;:60::66:0;;:39:::1;:16;:8::68;33:42:38:5;;;:4;40::45::0;;;;;41:25:41:36;;:38::48;:8::51:1;42:16:42:37:0;43:27:43:28;:16::45:1;:49::64:0;;:8::66:1;44:27:44:28:0;:16::35:1;:49::50:0;:39::57:1;:60::66:0;;:39:::1;:16;:8::68;40:46:45:5;;;:4;47::54::0;;;;48:27:48:35;;:8::37:1;;49:16:49::0;50:27:50:28;:16::45:1;:49::64:0;;:8::66:1;51:27:51:28:0;:16::35:1;:49::50:0;:39::57:1;:60::66:0;;:39:::1;:16;:8::68;53:16:53:24:0;:::31:1;;:35::37:0;:8::39:1;47:23:54:5;;18:0:55:1;;",
+    "logs": [],
+    "requires": [
+      { "ip": 14, "line": 27 },
+      { "ip": 25, "line": 29 },
+      { "ip": 34, "line": 30 },
+      { "ip": 47, "line": 34 },
+      { "ip": 53, "line": 36 },
+      { "ip": 62, "line": 37 },
+      { "ip": 75, "line": 41 },
+      { "ip": 81, "line": 43 },
+      { "ip": 90, "line": 44 },
+      { "ip": 101, "line": 48 },
+      { "ip": 108, "line": 50 },
+      { "ip": 117, "line": 51 },
+      { "ip": 123, "line": 53 }
+    ],
+    "sourceTags": "117:118:sc"
+  },
+  "compiler": {
+    "name": "cashc",
+    "version": "0.14.0",
+    "options": {
+      "enforceFunctionParameterTypes": true,
+      "enforceLocktimeGuard": true
+    }
+  },
+  "updatedAt": "2026-11-20T08:07:16.221Z"
+}
