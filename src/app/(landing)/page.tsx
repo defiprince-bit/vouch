@@ -126,7 +126,7 @@ export default function Landing() {
                 <p className="vl-foot-note vl-r" style={d('.18s')}>minimum stake 546 sats + network fee · verifier ≠ beneficiary</p>
               </div>
               <article className="vl-deed vl-r" style={d('.12s')} aria-label="Example promise">
-                <p className="vl-deed-kicker">Example only</p>
+                <p className="vl-deed-kicker">The promise</p>
                 <dl>
                   <div><dt>I will</dt><dd className="vl-hand">run three mornings this week.</dd></div>
                   <div><dt>I lock</dt><dd className="vl-hand">0.05 BCH</dd></div>
